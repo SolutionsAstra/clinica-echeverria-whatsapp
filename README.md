@@ -26,6 +26,23 @@ especialidades: Electroencefalografía, Medicina estética, Pediatría y Neurolo
 - Para pruebas locales: [ngrok](https://ngrok.com/) (o similar) para exponer tu
   `localhost` a internet, ya que Meta necesita una URL pública HTTPS para el webhook
 
+### Repositorio Git
+
+Este .zip ya incluye un repositorio Git inicializado (carpeta `.git`, con un primer
+commit) y un `.gitignore` que excluye `node_modules/` y `.env` — así nunca subes
+credenciales reales por accidente. Para subirlo a GitHub/GitLab:
+
+```bash
+# 1. Crea el repo vacío en GitHub/GitLab (sin README, sin licencia — ya tenemos contenido)
+# 2. Desde la carpeta del proyecto:
+git remote add origin https://github.com/TU_USUARIO/clinica-echeverria-whatsapp.git
+git push -u origin main
+```
+
+Si prefieres empezar el historial de cero (sin el commit que yo generé), borra la
+carpeta `.git` y corre `git init` de nuevo antes del `git remote add`.
+
+
 ## 2. Base de datos
 
 1. Crea la base de datos vacía, por ejemplo desde SSMS o `sqlcmd`:
