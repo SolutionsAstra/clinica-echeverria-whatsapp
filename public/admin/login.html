@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ingresar — Clínica Echeverría</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .login-shell{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);}
+  .login-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:32px 28px;width:100%;max-width:340px;}
+  .login-card .brand-mark{background:var(--teal-dark);color:#fff;width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;margin-bottom:14px;}
+  .login-card h1{font-size:18px;margin:0 0 4px;}
+  .login-card p{font-size:13px;color:var(--ink-soft);margin:0 0 20px;}
+  .login-card label{display:block;font-size:12.5px;color:var(--ink-soft);margin:12px 0 4px;}
+  .login-card input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;}
+  .login-card .btn{width:100%;margin-top:18px;padding:10px;}
+  .login-error{color:var(--red);font-size:12.5px;margin-top:10px;display:none;}
+</style>
+</head>
+<body>
+<div class="login-shell">
+  <form class="login-card" id="login-form">
+    <div class="brand-mark">CE</div>
+    <h1>Clínica Echeverría</h1>
+    <p>Ingresa con tu cuenta del panel administrativo</p>
+    <label>Correo</label>
+    <input type="email" id="email" required autocomplete="username">
+    <label>Contraseña</label>
+    <input type="password" id="password" required autocomplete="current-password">
+    <button class="btn" type="submit">Ingresar</button>
+    <div class="login-error" id="login-error">Correo o contraseña incorrectos.</div>
+  </form>
+</div>
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const errBox = document.getElementById('login-error');
+  errBox.style.display='none';
+
+  const res = await fetch('/api/auth/login', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ email, password })
+  });
+  if(res.ok){
+    window.location.href='index.html';
+  } else {
+    errBox.style.display='block';
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel — Clínica Echeverría</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand">
+      <span class="brand-mark">CE</span>
+      <div>
+        <div class="brand-name">Clínica Echeverría</div>
+        <div class="brand-sub">Panel administrativo</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <button class="nav-item active" data-view="resumen">Resumen</button>
+      <button class="nav-item" data-view="citas">Citas</button>
+      <button class="nav-item" data-view="doctores">Doctores y horarios</button>
+      <button class="nav-item" data-view="reportes" data-role="direccion">Reportes</button>
+      <button class="nav-item" data-view="escaladas" data-role="recepcion,direccion">Escaladas a asesor</button>
+      <button class="nav-item" data-view="usuarios" data-role="direccion">Usuarios</button>
+    </nav>
+    <div class="user-box" id="user-box"></div>
+  </aside>
+
+  <main class="main">
+    <!-- RESUMEN -->
+    <section id="view-resumen" class="view active">
+      <header class="view-head"><h1>Resumen</h1></header>
+      <div class="metric-grid" id="metric-grid"></div>
+    </section>
+
+    <!-- CITAS -->
+    <section id="view-citas" class="view">
+      <header class="view-head">
+        <h1>Citas</h1>
+        <div class="filters">
+          <select id="f-estado">
+            <option value="">Todos los estados</option>
+            <option value="confirmada">Confirmada</option>
+            <option value="cancelada">Cancelada</option>
+            <option value="no_show">No-show</option>
+          </select>
+          <select id="f-especialidad">
+            <option value="">Todas las especialidades</option>
+            <option value="eeg">Electroencefalografía</option>
+            <option value="estetica">Medicina estética</option>
+            <option value="pediatria">Pediatría</option>
+            <option value="neurologia">Neurología</option>
+          </select>
+        </div>
+      </header>
+      <div class="card">
+        <table class="tbl" id="tbl-citas">
+          <thead><tr><th>Paciente</th><th>Teléfono</th><th>Especialidad</th><th>Doctor</th><th>Fecha</th><th>Estado</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty-msg" id="citas-empty" hidden>No hay citas que coincidan con el filtro.</p>
+      </div>
+    </section>
+
+    <!-- DOCTORES -->
+    <section id="view-doctores" class="view">
+      <header class="view-head"><h1>Doctores y horarios</h1></header>
+      <div class="card-grid" id="doctores-grid"></div>
+    </section>
+
+    <!-- REPORTES -->
+    <section id="view-reportes" class="view">
+      <header class="view-head">
+        <h1>Reportes automáticos</h1>
+        <button class="btn" id="btn-generar-reporte">Generar y enviar ahora</button>
+      </header>
+      <div class="card">
+        <table class="tbl">
+          <thead><tr><th>Doctor</th><th>Fecha de generación</th><th>Estado</th></tr></thead>
+          <tbody id="tbl-reportes"></tbody>
+        </table>
+        <p class="empty-msg" id="reportes-empty" hidden>Aún no se ha enviado ningún reporte.</p>
+      </div>
+    </section>
+
+    <!-- ESCALADAS -->
+    <section id="view-escaladas" class="view">
+      <header class="view-head"><h1>Conversaciones escaladas a un asesor</h1></header>
+      <div class="card">
+        <table class="tbl">
+          <thead><tr><th>Teléfono</th><th>Motivo</th><th>Fecha</th></tr></thead>
+          <tbody id="tbl-escaladas"></tbody>
+        </table>
+        <p class="empty-msg" id="escaladas-empty" hidden>No hay conversaciones escaladas.</p>
+      </div>
+    </section>
+
+    <!-- USUARIOS -->
+    <section id="view-usuarios" class="view">
+      <header class="view-head"><h1>Usuarios del panel</h1></header>
+
+      <div class="card" style="padding:18px 20px;margin-bottom:18px;">
+        <h3 style="margin:0 0 12px;font-size:14px;">Crear nuevo usuario</h3>
+        <form id="form-nuevo-usuario" class="user-form">
+          <input type="text" id="nu-nombre" placeholder="Nombre" required>
+          <input type="email" id="nu-email" placeholder="Correo" required>
+          <input type="password" id="nu-password" placeholder="Contraseña (mín. 6 caracteres)" required minlength="6">
+          <select id="nu-rol" required>
+            <option value="">Rol…</option>
+            <option value="recepcion">Recepción</option>
+            <option value="doctor">Doctor</option>
+            <option value="direccion">Dirección</option>
+          </select>
+          <select id="nu-doctor" hidden></select>
+          <button class="btn" type="submit">Crear usuario</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <table class="tbl">
+          <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Doctor asociado</th><th>Estado</th><th></th></tr></thead>
+          <tbody id="tbl-usuarios"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

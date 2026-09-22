@@ -1,0 +1,16 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno con credenciales reales — NUNCA subir esto al repo
+.env
+
+# Datos locales (si en algún punto se usa un fallback de archivo)
+data/db.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# Sistema operativo / editor
+.DS_Store
+.vscode/
