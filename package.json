@@ -6,7 +6,10 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/server.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "axios": "^1.7.7",
@@ -18,5 +21,12 @@
     "mssql": "^12.7.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.15"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.25",
+    "@types/mssql": "^9.1.11",
+    "@types/node": "^22.20.4",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
   }
 }

@@ -6,11 +6,56 @@
 const wa = require('./whatsapp');
 const db = require('./db');
 const sessions = require('./sessions');
-const { slotsDisponibles } = require('./availability');
+const vet = require('./integrations/vetClient');
+
+const TZ = 'America/Caracas';
+const NOMBRE_ESPECIALIDAD = { eeg: 'Electroencefalografía', estetica: 'Medicina estética', pediatria: 'Pediatría', neurologia: 'Neurología' };
+const ETIQUETA_DIA = { hoy: 'Hoy', manana: 'Mañana', pasado_manana: 'Pasado mañana' };
+
+function tituloDia(dia) {
+  const [, mes, d] = dia.date.split('-');
+  const base = ETIQUETA_DIA[dia.label]
+    || new Date(`${dia.date}T12:00:00Z`).toLocaleDateString('es-VE', { weekday: 'long', timeZone: 'UTC' });
+  return `${base} ${d}/${mes}`.slice(0, 20); // límite de título de botón de WhatsApp
+}
+
+function hora(iso) {
+  return new Date(iso).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
+}
 
 function fmt(fecha) {
-  return new Date(fecha).toLocaleString('es-VE', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return new Date(fecha).toLocaleString('es-VE', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ });
 }
+
+async function mostrarHorarios(telefono, sesion) {
+  let disp;
+  try {
+    disp = await vet.obtenerDisponibilidad(sesion.datos.especialidad);
+  } catch (err) {
+    console.error('Módulo VET no disponible:', err.code, err.message);
+    await db.registrarEscalada(telefono, `Agenda no disponible (${err.code})`);
+    await wa.enviarTexto(telefono, 'No pude consultar la agenda en este momento. Un asesor te contactará para coordinar. 🙏');
+    sessions.reset(telefono);
+    return;
+  }
+
+  const dias = disp.days.filter(d => d.slots.length > 0);
+  if (dias.length === 0) {
+    await db.registrarEscalada(telefono, `Sin cupos en ventana VET: ${sesion.datos.especialidad}`);
+    await wa.enviarTexto(telefono, 'No hay horarios disponibles en los próximos 3 días. Un asesor te contactará para coordinar.');
+    sessions.reset(telefono);
+    return;
+  }
+
+  sesion.datos.especialidadNombre = NOMBRE_ESPECIALIDAD[sesion.datos.especialidad];
+  sesion.datos.diasOfrecidos = dias;
+  await wa.enviarBotones(telefono,
+    `¿Qué día prefieres para ${sesion.datos.especialidadNombre}? (duración: ${disp.durationMin} min)`,
+    dias.map((d, i) => ({ id: `dia_${i}`, title: tituloDia(d) }))
+  );
+  sesion.paso = 'dia';
+}
+
 
 async function procesarMensaje(telefono, texto, idInteractivo) {
   const sesion = sessions.get(telefono);
@@ -176,6 +221,19 @@ async function procesarMensaje(telefono, texto, idInteractivo) {
       sesion.datos.nombrePaciente = entrada;
       await mostrarHorarios(telefono, sesion);
       break;
+    // ---------------- Selección de día ----------------      
+    case 'dia': {
+      const dia = sesion.datos.diasOfrecidos?.[parseInt(entrada.replace('dia_', ''), 10)];
+      if (!dia) { await wa.enviarTexto(telefono, 'Selecciona uno de los días de la lista.'); break; }
+      const slots = dia.slots.slice(0, 10); // una lista de WhatsApp admite máx. 10 filas
+      sesion.datos.slotsOfrecidos = slots;
+      await wa.enviarLista(telefono, `Horarios disponibles — ${tituloDia(dia)}:`, 'Ver horarios',
+        slots.map((s, i) => ({ id: `slot_${i}`, title: `${hora(s.start)} · ${s.doctorName}`.slice(0, 24) }))
+      );
+      sesion.paso = 'horario';
+      break;
+    }
+
 
     // ---------------- Selección de horario ----------------
     case 'horario': {
@@ -199,16 +257,29 @@ async function procesarMensaje(telefono, texto, idInteractivo) {
           nombre_acudiente: sesion.datos.datosAcudiente || null
         });
         const slot = sesion.datos.slotElegido;
-        await db.crearCita({
-          paciente_id: paciente.id,
-          doctor_id: sesion.datos.doctorId,
-          especialidad_codigo: sesion.datos.especialidad,
-          recurso_id: slot.recurso_id,
-          fecha_hora_inicio: slot.inicio,
-          fecha_hora_fin: slot.fin,
-          notas: sesion.datos.procedimiento || sesion.datos.areaValoracion || null
-        });
-        await wa.enviarTexto(telefono, '✅ ¡Cita confirmada! Te enviaremos un recordatorio antes de tu cita.');
+            try {
+              await vet.reservar({
+                especialidad: sesion.datos.especialidad,
+                doctorId: slot.doctorId,
+                inicio: slot.start,
+                paciente: {
+                  telefono,
+                  nombre: sesion.datos.nombrePaciente,
+                  esMenor: !!sesion.datos.esMenor,
+                  nombreAcudiente: sesion.datos.datosAcudiente || null
+                },
+                notas: sesion.datos.procedimiento || sesion.datos.areaValoracion || null
+              });
+            } catch (err) {
+              if (err.code === 'SLOT_TAKEN' || err.code === 'SLOT_NOT_OFFERED') {
+                await wa.enviarTexto(telefono, 'Ese horario acaba de ocuparse 😕 Te muestro los disponibles actualizados.');
+                await mostrarHorarios(telefono, sesion);
+                break;
+              }
+              throw err;
+            }
+            await wa.enviarTexto(telefono, '✅ ¡Cita confirmada! Te enviaremos un recordatorio antes de tu cita.');
+
 
         if (sesion.datos.especialidad === 'neurologia') {
           await wa.enviarBotones(telefono, '¿Deseas agendar también un electroencefalograma de seguimiento?',

@@ -6,6 +6,10 @@ const webhookRoutes = require('./routes/webhook');
 const authRoutes = require('./routes/authRoutes');
 const adminApiRoutes = require('./routes/adminApi');
 const { requireLogin } = require('./middleware/auth');
+const { getPool } = require('./db');
+const { createVetModule, requireApiKey } = require('./modules/vet');
+const vetModule = createVetModule({ getPool, schema: process.env.DB_SCHEMA || 'dbo' });
+
 require('./jobs/reminders');
 require('./jobs/reportJob');
 
@@ -36,6 +40,7 @@ app.use('/api/auth', authRoutes);
 // El HTML/CSS/JS del panel es público (sin datos sensibles); la seguridad real
 // está en que cada llamada a /api/* exige sesión y, en varios casos, un rol.
 app.use('/admin', express.static(path.join(__dirname, '..', 'public', 'admin')));
+app.use('/api/vet', requireApiKey(process.env.VET_API_KEY), vetModule.router);
 app.use('/api', requireLogin, adminApiRoutes);
 
 // Manejador de errores central — evita que un error de SQL tumbe el proceso
