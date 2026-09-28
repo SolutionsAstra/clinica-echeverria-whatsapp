@@ -3,7 +3,9 @@ export type VetErrorCode =
   | "SLOT_NOT_OFFERED"
   | "SLOT_TAKEN"
   | "BUSY_RETRY"
-  | "RESOURCE_NOT_CONFIGURED";
+  | "RESOURCE_NOT_CONFIGURED"
+  | "INVALID_DURATION"
+  | "DURATION_MISMATCH";
 
 /** Error de negocio del módulo VET. La capa HTTP lo traduce a un status. */
 export class VetError extends Error {

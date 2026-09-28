@@ -9,6 +9,17 @@ const { requireLogin } = require('./middleware/auth');
 const { getPool } = require('./db');
 const { createVetModule, requireApiKey } = require('./modules/vet');
 const vetModule = createVetModule({ getPool, schema: process.env.DB_SCHEMA || 'dbo' });
+const { createDerivacionesModule } = require('./modules/derivaciones');
+const derivacionesModule = createDerivacionesModule({ getPool, schema: process.env.DB_SCHEMA || 'dbo' });
+const dbSchema = process.env.DB_SCHEMA || 'public'; 
+const vetModule = createVetModule({ getPool, schema: dbSchema });
+const derivacionesModule = createDerivacionesModule({ getPool, schema: dbSchema });
+
+
+
+
+
+
 
 require('./jobs/reminders');
 require('./jobs/reportJob');
@@ -36,7 +47,10 @@ app.use('/webhook', webhookRoutes);
 
 // Login/logout — públicos, es lo que permite entrar
 app.use('/api/auth', authRoutes);
-
+//  Rutas del Dashboard protegidas por el Login tradicional
+app.use('/api/derivaciones', requireLogin, derivacionesModule.router);
+//  Ruta pública para que el bot de WhatsApp inyecte las sesiones capturadas
+app.use('/api/ia/derivaciones', requireApiKey(process.env.VET_API_KEY), derivacionesModule.publicRouter);
 // El HTML/CSS/JS del panel es público (sin datos sensibles); la seguridad real
 // está en que cada llamada a /api/* exige sesión y, en varios casos, un rol.
 app.use('/admin', express.static(path.join(__dirname, '..', 'public', 'admin')));

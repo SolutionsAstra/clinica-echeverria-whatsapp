@@ -1,8 +1,10 @@
+import { VetError } from "./errors";
+
 /**
  * Especialidades del centro médico. Esta tabla es la ÚNICA fuente de verdad
  * de duraciones y recursos físicos dentro del módulo VET.
  *
- * Los códigos coinciden con `especialidades.codigo` en SQL Server
+ * Los códigos coinciden con `especialidades.codigo` en la BD
  * ('eeg' | 'estetica' | 'pediatria' | 'neurologia').
  *
  * `resourceType` apunta a `recursos.tipo`: toda cita de esa especialidad
@@ -58,4 +60,19 @@ export function durationOf(specialty: Specialty): number {
 
 export function resourceTypeOf(specialty: Specialty): string | null {
   return SPECIALTY_RULES[specialty].resourceType;
+}
+
+/**
+ * Contrato con la BD: `especialidades.duracion_min` debe coincidir con
+ * SPECIALTY_RULES. Si alguien edita la migración o la tabla sin tocar el código
+ * (o al revés), se falla en voz alta en vez de agendar con dos reglas distintas.
+ */
+export function assertDurationMatches(specialty: Specialty, durationInDb: number): void {
+  const expected = durationOf(specialty);
+  if (durationInDb !== expected) {
+    throw new VetError(
+      "DURATION_MISMATCH",
+      `Especialidad '${specialty}': la BD define ${durationInDb} min y el código ${expected} min`,
+    );
+  }
 }

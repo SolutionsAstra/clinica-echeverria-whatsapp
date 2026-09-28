@@ -315,30 +315,6 @@ async function procesarMensaje(telefono, texto, idInteractivo) {
   sessions.set(telefono, sesion);
 }
 
-async function mostrarHorarios(telefono, sesion) {
-  const doctor = await db.getDoctorPrincipalDeEspecialidad(sesion.datos.especialidad);
-  if (!doctor) {
-    await wa.enviarTexto(telefono, 'Por ahora no hay doctores configurados para esa especialidad. Un asesor te contactará.');
-    sessions.reset(telefono);
-    return;
-  }
-  const especialidad = await db.getEspecialidadPorCodigo(sesion.datos.especialidad);
-  const slots = await slotsDisponibles({ doctorId: doctor.id, especialidadKey: sesion.datos.especialidad });
 
-  sesion.datos.doctorId = doctor.id;
-  sesion.datos.doctorNombre = doctor.nombre;
-  sesion.datos.especialidadNombre = especialidad.nombre;
-  sesion.datos.slotsOfrecidos = slots;
-
-  if (slots.length === 0) {
-    await wa.enviarTexto(telefono, 'No encontré horarios disponibles próximamente. Un asesor te contactará para coordinar.');
-    sessions.reset(telefono);
-    return;
-  }
-  await wa.enviarLista(telefono, `Estos son los horarios disponibles con ${doctor.nombre}:`, 'Ver horarios',
-    slots.map((s, i) => ({ id: `slot_${i}`, title: fmt(s.inicio) }))
-  );
-  sesion.paso = 'horario';
-}
 
 module.exports = { procesarMensaje };

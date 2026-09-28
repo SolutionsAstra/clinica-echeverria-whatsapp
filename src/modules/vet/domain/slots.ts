@@ -1,5 +1,6 @@
 import { localToInstant, type LocalDate } from "./local-time";
 import type { DailyHours } from "./schedule";
+import { VetError } from "./errors";
 
 export interface Interval {
   start: Date;
@@ -9,6 +10,9 @@ export interface Interval {
 /**
  * Rejilla de bloques consecutivos de `durationMin` dentro de una franja,
  * anclada a la apertura de la franja. Sin buffer: la duración es estricta.
+ *
+ * Lanza VetError("INVALID_DURATION") si `durationMin` no es un entero positivo:
+ * con 0 o negativos el bucle nunca terminaría y bloquearía el event loop.
  */
 export function candidateBlocks(
   date: LocalDate,
@@ -16,6 +20,9 @@ export function candidateBlocks(
   durationMin: number,
   timeZone: string,
 ): Interval[] {
+  if (!Number.isInteger(durationMin) || durationMin <= 0) {
+    throw new VetError("INVALID_DURATION", `Duración inválida: ${durationMin} (se espera un entero positivo de minutos)`);
+  }
   const out: Interval[] = [];
   for (let m = hours.openMinute; m + durationMin <= hours.closeMinute; m += durationMin) {
     out.push({

@@ -10,6 +10,9 @@ const STATUS: Record<VetErrorCode, number> = {
   SLOT_TAKEN: 409,
   BUSY_RETRY: 503,
   RESOURCE_NOT_CONFIGURED: 500,
+  // Errores de configuración del servidor, no del paciente: 500.
+  INVALID_DURATION: 500,
+  DURATION_MISMATCH: 500,
 };
 
 /**
