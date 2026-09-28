@@ -4,58 +4,34 @@ Cambios puntuales sobre archivos existentes. Los archivos nuevos del módulo
 (`src/modules/vet/**`, `src/integrations/vetClient.js`, `sql/migrations/001_modulo_vet.sql`,
 `tsconfig.json`) se copian tal cual.
 
-## 0. Borrar el esqueleto anterior
+## 0. Archivos que se eliminan
 
 ```bash
-git rm src/modules/vet/infrastructure/mssql/mssql-busy-agenda.ts
+git rm src/db.js                                                        # reemplazado por src/db.ts
+git rm src/modules/vet/infrastructure/mssql/mssql-busy-agenda.ts        # esqueleto con tablas inexistentes
+npm uninstall mssql
 ```
 
-Consultaba `agenda.Citas` con columnas PascalCase que no existen en `sql/schema.sql`.
-Lo reemplaza `mssql-scheduling-repository.ts`.
+`src/db.js` **debe** borrarse: si conviven `db.js` y `db.ts`, `require('./db')`
+resuelve primero el `.js` y seguirías usando SQL Server sin darte cuenta.
 
 ## 1. `package.json`
 
-```jsonc
-{
-  "scripts": {
-    "start": "node dist/server.js",
-    "dev": "tsx watch src/server.js",
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test \"src/**/*.test.ts\""
-  },
-  "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/mssql": "^9.1.5",
-    "@types/node": "^22.10.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
-  }
-}
-```
+Usa el `package.json` incluido (agrega `pg`, `@types/pg`, TypeScript, `tsx` y los scripts):
 
 ```bash
-npm i -D typescript tsx @types/node @types/express@4 @types/mssql
+npm i pg && npm i -D typescript tsx @types/node @types/express@4 @types/pg
 ```
 
 `allowJs` compila todo `src/` (JS legado + TS nuevo) a `dist/`, así el proyecto
-sigue siendo CommonJS y `server.js` puede hacer `require('./modules/vet')`.
-En desarrollo `tsx` resuelve los `.ts` directamente.
+sigue siendo CommonJS: `require('./db')` y `require('./modules/vet')` funcionan
+desde los `.js` existentes sin tocarlos. En desarrollo `tsx` resuelve los `.ts`.
 
-## 2. `src/db.js` — exportar el pool
+## 2. `src/db.ts`
 
-El módulo reutiliza el mismo pool perezoso (no abre conexiones propias).
-Agrega `getPool` al `module.exports` existente:
-
-```js
-module.exports = {
-  // ...todo lo que ya exporta,
-  getPool
-};
-```
-
-No cambies `options.useUTC` (por defecto `true`): el módulo asume que
-`citas.fecha_hora_inicio/fin` se guardan en UTC, igual que el resto del proyecto.
+Misma API pública que `db.js` (mismos nombres de función y mismos parámetros),
+incluido `getPool()`, que sigue siendo perezoso y devuelve `Promise<Pool>`.
+Ningún consumidor (rutas, jobs, `engine.js`, `availability.js`) necesita cambios.
 
 ## 3. `src/server.js` — montar el servicio
 
@@ -63,7 +39,7 @@ No cambies `options.useUTC` (por defecto `true`): el módulo asume que
 const { getPool } = require('./db');
 const { createVetModule, requireApiKey } = require('./modules/vet');
 
-const vetModule = createVetModule({ getPool, schema: process.env.DB_SCHEMA || 'dbo' });
+const vetModule = createVetModule({ getPool, schema: process.env.DB_SCHEMA || 'public' });
 ```
 
 Y **antes** de `app.use('/api', requireLogin, adminApiRoutes);` (si va después,
@@ -74,10 +50,27 @@ Y **antes** de `app.use('/api', requireLogin, adminApiRoutes);` (si va después,
 app.use('/api/vet', requireApiKey(process.env.VET_API_KEY), vetModule.router);
 ```
 
+Opcional, para cerrar conexiones al apagar:
+
+```js
+const { closePool } = require('./db');
+process.on('SIGTERM', () => closePool().finally(() => process.exit(0)));
+```
+
 ## 4. `.env` / `.env.example`
 
+Las variables `DB_SERVER`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT`,
+`DB_ENCRYPT` y `DB_TRUST_CERT` ya no se usan. Se reemplazan por:
+
 ```dotenv
-DB_SCHEMA=dbo
+# Supabase → Connect → Session pooler (puerto 5432). NO agregues ?sslmode=… a la URL:
+# pg le da prioridad sobre la configuración TLS de db.ts.
+DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+# Certificado de Supabase (Database → SSL Configuration → Download certificate)
+DB_SSL_CA_PATH=./certs/supabase-prod-ca.crt
+DB_POOL_MAX=10
+DB_SCHEMA=public
+
 # Genérala con: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 VET_API_KEY=
 VET_API_URL=http://localhost:3000/api/vet
@@ -85,23 +78,9 @@ VET_API_URL=http://localhost:3000/api/vet
 
 ## 5. Base de datos
 
-```bash
-sqlcmd -S localhost -U sa -P tu_clave -d ClinicaEcheverria -i sql/migrations/001_modulo_vet.sql
-```
-
-Para instalaciones nuevas, corrige también `sql/seed.sql` para que no nazca desalineado:
-
-```sql
-INSERT INTO especialidades (codigo, nombre, duracion_min, requiere_recurso) VALUES
-  ('eeg', N'Electroencefalografía', 120, 1),
-  ('estetica', N'Medicina estética', 45, 0),
-  ('pediatria', N'Pediatría', 30, 0),
-  ('neurologia', N'Neurología', 60, 0);
-
-INSERT INTO recursos (nombre, tipo) VALUES
-  (N'Sala EEG', 'equipo_eeg'),
-  (N'Consultorio de Neurología', 'consultorio_neurologia');
-```
+Ya aplicada en el proyecto `clinica-echeverria-core` (esquema, datos iniciales y
+migración 001). Para otro entorno, ejecuta los tres scripts de PostgreSQL en ese
+orden desde el SQL Editor de Supabase.
 
 ## 6. `src/engine.js` — el asistente consume el servicio
 

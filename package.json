@@ -2,11 +2,11 @@
   "name": "clinica-echeverria-whatsapp",
   "version": "0.1.0",
   "description": "Backend de agendamiento automatizado por WhatsApp para Clínica Echeverría",
-  "main": "src/server.js",
+  "main": "dist/server.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\""
@@ -18,15 +18,16 @@
     "exceljs": "^4.4.0",
     "express": "^4.21.0",
     "express-session": "^1.18.0",
-    "mssql": "^12.7.2",
+    "lucide-react": "^1.48.0",
     "node-cron": "^3.0.3",
-    "nodemailer": "^6.9.15"
+    "nodemailer": "^6.9.15",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.25",
-    "@types/mssql": "^9.1.11",
-    "@types/node": "^22.20.4",
-    "tsx": "^4.23.15",
-    "typescript": "^5.9.3"
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
   }
 }
