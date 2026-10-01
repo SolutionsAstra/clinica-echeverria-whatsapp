@@ -3,15 +3,13 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const webhookRoutes = require('./routes/webhook');
-const authRoutes = require('./routes/authRoutes');
+const { authRouter } = require('./routes/auth.routes');
 const adminApiRoutes = require('./routes/adminApi');
 const { requireLogin } = require('./middleware/auth');
 const { getPool } = require('./db');
 const { createVetModule, requireApiKey } = require('./modules/vet');
-const vetModule = createVetModule({ getPool, schema: process.env.DB_SCHEMA || 'dbo' });
 const { createDerivacionesModule } = require('./modules/derivaciones');
-const derivacionesModule = createDerivacionesModule({ getPool, schema: process.env.DB_SCHEMA || 'dbo' });
-const dbSchema = process.env.DB_SCHEMA || 'public'; 
+const dbSchema = process.env.DB_SCHEMA || 'public';  
 const vetModule = createVetModule({ getPool, schema: dbSchema });
 const derivacionesModule = createDerivacionesModule({ getPool, schema: dbSchema });
 
@@ -46,7 +44,7 @@ app.get('/', (req, res) => res.send('Servidor de WhatsApp — Clínica Echeverr�
 app.use('/webhook', webhookRoutes);
 
 // Login/logout — públicos, es lo que permite entrar
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authRouter);
 //  Rutas del Dashboard protegidas por el Login tradicional
 app.use('/api/derivaciones', requireLogin, derivacionesModule.router);
 //  Ruta pública para que el bot de WhatsApp inyecte las sesiones capturadas
