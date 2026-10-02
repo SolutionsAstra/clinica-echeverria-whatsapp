@@ -1,122 +1,51 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import React, { useState, useEffect } from 'react';
+import LoginForm from './components/dashboard/LoginForm';
+import WorkspaceDashboard from './components/dashboard/WorkspaceDashboard';
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+  const [usuario, setUsuario] = useState(null);
+  const [derivaciones, setDerivaciones] = useState([]);
+  const [proximasCitas, setProximasCitas] = useState([]);
 
+  // Cada vez que la recepcionista inicia sesión con éxito, cargamos los flujos de Supabase
+  useEffect(() => {
+    if (!usuario) return;
+
+    const cargarDatosPanel = async () => {
+      try {
+        // 1. Cargar las solicitudes de la IA desde el backend real
+        const resDerivaciones = await fetch('/api/derivaciones');
+        const dataDerivaciones = await resDerivaciones.json();
+
+        // 2. Cargar las próximas citas médicas del día
+        const mockCitas = [
+          { id: 1, paciente: 'Carlos Mendoza', hora: '10:00 AM', especialidad: 'neurologia', doctor: 'Dr. Rojas', confirmado: true },
+          { id: 2, paciente: 'Sofía Valentina', hora: '11:30 AM', especialidad: 'pediatria', doctor: 'Dra. Salas', confirmado: false },
+          { id: 3, paciente: 'Marcos Castillo', hora: '02:00 PM', especialidad: 'eeg', doctor: 'Sala EEG', confirmado: true }
+        ];
+
+        setDerivaciones(Array.isArray(dataDerivaciones) ? dataDerivaciones : dataDerivaciones.derivaciones || []);
+        setProximasCitas(mockCitas);
+      } catch (err) {
+        console.error('Error cargando los flujos del Dashboard:', err);
+      }
+    };
+
+    cargarDatosPanel();
+  }, [usuario]);
+
+  // Si no hay sesión activa, forzamos la pantalla de acceso premium
+  if (!usuario) {
+    return <LoginForm onLoginSuccess={(usr) => setUsuario(usr)} />;
+  }
+
+  // Al autenticarse, damos paso al Workspace unificado de 3 columnas
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+    <WorkspaceDashboard 
+      usuarioActual={usuario} 
+      solicitudesIniciales={derivaciones}
+      proximasCitasIniciales={proximasCitas}
+      onLogout={() => setUsuario(null)} 
+    />
+  );
 }
-
-export default App

@@ -5,20 +5,36 @@ const path = require('path');
 const webhookRoutes = require('./routes/webhook');
 const { authRouter } = require('./routes/auth.routes');
 const adminApiRoutes = require('./routes/adminApi');
-const { requireLogin } = require('./middleware/auth');
+const { requireLogin, requireRole } = require('./middleware/auth');
 const { getPool } = require('./db');
+const wa = require('./whatsapp');
 const { createVetModule, requireApiKey } = require('./modules/vet');
 const { createDerivacionesModule } = require('./modules/derivaciones');
-const dbSchema = process.env.DB_SCHEMA || 'public';  
+
+const dbSchema = process.env.DB_SCHEMA || 'public';
+
+// Una sola instancia del middleware de API key: valida la clave una vez al arrancar.
+const iaApiKey = requireApiKey(process.env.VET_API_KEY);
+
 const vetModule = createVetModule({ getPool, schema: dbSchema });
-const derivacionesModule = createDerivacionesModule({ getPool, schema: dbSchema });
+const derivacionesModule = createDerivacionesModule({
+  getPool,
+  schema: dbSchema,
+  scheduler: vetModule.scheduler,                  // reserva en proceso, sin HTTP
+  notifier: wa,                                    // usa wa.enviarTexto(to, texto)
+  authorize: requireRole('recepcion', 'direccion'),
+});
 
-
-
-
-
-
-
+// Falla al arrancar con un mensaje claro si algún router no se resolvió.
+for (const [nombre, mw] of Object.entries({
+  authRouter,
+  requireLogin,
+  'vetModule.router': vetModule.router,
+  'derivacionesModule.router': derivacionesModule.router,
+  'derivacionesModule.iaRouter': derivacionesModule.iaRouter,
+})) {
+  if (typeof mw !== 'function') throw new Error(`[server] ${nombre} no es un middleware (recibido: ${typeof mw})`);
+}
 require('./jobs/reminders');
 require('./jobs/reportJob');
 
@@ -45,14 +61,18 @@ app.use('/webhook', webhookRoutes);
 
 // Login/logout — públicos, es lo que permite entrar
 app.use('/api/auth', authRouter);
-//  Rutas del Dashboard protegidas por el Login tradicional
+
+// Bandeja de derivaciones del panel: sesión + rol (recepcion/direccion)
 app.use('/api/derivaciones', requireLogin, derivacionesModule.router);
-//  Ruta pública para que el bot de WhatsApp inyecte las sesiones capturadas
-app.use('/api/ia/derivaciones', requireApiKey(process.env.VET_API_KEY), derivacionesModule.publicRouter);
-// El HTML/CSS/JS del panel es público (sin datos sensibles); la seguridad real
-// está en que cada llamada a /api/* exige sesión y, en varios casos, un rol.
+
+// Servicios para el Asistente de WhatsApp: API key, sin sesión.
+// Deben ir ANTES de app.use('/api', requireLogin, ...) o requireLogin respondería 401.
+app.use('/api/ia/derivaciones', iaApiKey, derivacionesModule.iaRouter);
+app.use('/api/vet', iaApiKey, vetModule.router);
+
+// Panel estático (sin datos sensibles; la seguridad está en /api/*)
 app.use('/admin', express.static(path.join(__dirname, '..', 'public', 'admin')));
-app.use('/api/vet', requireApiKey(process.env.VET_API_KEY), vetModule.router);
+
 app.use('/api', requireLogin, adminApiRoutes);
 
 // Manejador de errores central — evita que un error de SQL tumbe el proceso
