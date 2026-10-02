@@ -3,14 +3,16 @@
 // Si el frontend corre en otro puerto (Vite), configura un proxy de /api → :3000 para
 // mantener el mismo origen y que la cookie viaje.
 
-async function pedir(url, opciones = {}) {
+export const RUTA_LOGIN = "/admin/login.html";
+
+export async function pedir(url, opciones = {}) {
   const res = await fetch(url, {
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     ...opciones,
   });
   if (res.status === 401) {
-    window.location.href = "/admin/login.html";
+    window.location.href = RUTA_LOGIN;
     throw Object.assign(new Error("No autenticado"), { code: "UNAUTHENTICATED" });
   }
   const data = await res.json().catch(() => ({}));
@@ -21,7 +23,7 @@ async function pedir(url, opciones = {}) {
   return data;
 }
 
-export const listarDerivaciones = () => pedir("/api/derivaciones");
+export const listarDerivaciones = ({ signal } = {}) => pedir("/api/derivaciones", { signal });
 
 /** Firma compatible con la prop onReservar(payload, solicitud). Solo se envían inicio y doctorId. */
 export const reservarDerivacion = ({ derivacionId, inicio, doctorId }) =>
@@ -29,8 +31,3 @@ export const reservarDerivacion = ({ derivacionId, inicio, doctorId }) =>
     method: "POST",
     body: JSON.stringify({ inicio, doctorId }),
   });
-
-// Uso:
-//   const [solicitudes, setSolicitudes] = useState([]);
-//   useEffect(() => { listarDerivaciones().then(setSolicitudes); }, []);
-//   <BandejaDerivaciones solicitudes={solicitudes} onReservar={reservarDerivacion} />
