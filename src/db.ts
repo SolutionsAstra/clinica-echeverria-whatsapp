@@ -4,6 +4,7 @@
 // sigan funcionando sin cambios.
 
 import fs from "node:fs";
+import path from "node:path";
 import { Pool, types, type PoolConfig, type QueryResultRow } from "pg";
 import { buildQuery } from "./lib/sql-template";
 
@@ -95,12 +96,21 @@ export interface Usuario {
 }
 
 // ---------------- Conexión ----------------
+const HOST_DIRECTO_SUPABASE = /^db\.([a-z0-9]+)\.supabase\.co$/i;
+
 function sslConfig(): PoolConfig["ssl"] {
   if (process.env.DB_SSL === "false") return false; // Postgres local sin TLS
-  const caPath = process.env.DB_SSL_CA_PATH;
+  const caPath = process.env.DB_SSL_CA_PATH?.trim();
   if (caPath) {
-    // Certificado raíz de Supabase (Dashboard → Database → SSL Configuration).
-    return { ca: fs.readFileSync(caPath, "utf8"), rejectUnauthorized: true };
+    // Relativa a la raíz del proyecto (src/ y dist/ están un nivel abajo), no al cwd.
+    const absoluta = path.isAbsolute(caPath) ? caPath : path.resolve(__dirname, "..", caPath);
+    if (!fs.existsSync(absoluta)) {
+      throw new Error(
+        `[db] DB_SSL_CA_PATH apunta a ${absoluta}, que no existe. Descarga el certificado ` +
+          "(Supabase → Database → SSL Configuration) a esa ruta, o quita la variable en desarrollo.",
+      );
+    }
+    return { ca: fs.readFileSync(absoluta, "utf8"), rejectUnauthorized: true };
   }
   console.warn(
     "[db] DB_SSL_CA_PATH no está definido: la conexión va cifrada pero sin verificar el certificado del servidor. " +
@@ -109,13 +119,63 @@ function sslConfig(): PoolConfig["ssl"] {
   return { rejectUnauthorized: false };
 }
 
+function normalizarConnectionString(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(
+      "[db] DATABASE_URL no es una URL válida. Si la contraseña contiene @ # / : ? %, codifícala con encodeURIComponent.",
+    );
+  }
+  // pg da prioridad a los parámetros SSL de la URL sobre el objeto `ssl`: se quitan
+  // para que mande sslConfig().
+  for (const p of ["sslmode", "sslrootcert", "sslcert", "sslkey", "uselibpqcompat"]) url.searchParams.delete(p);
+
+  const directo = HOST_DIRECTO_SUPABASE.exec(url.hostname);
+  if (directo) {
+    console.warn(
+      `[db] DATABASE_URL usa la conexión directa (${url.hostname}), que Supabase solo publica en IPv6. ` +
+        `Si esta red no tiene IPv6 fallará con ENETUNREACH/ENOTFOUND. Usa el Session pooler: ` +
+        `usuario postgres.${directo[1]} en aws-0-<region>.pooler.supabase.com:5432.`,
+    );
+  }
+  return url.toString();
+}
+
+function pistaConexion(err: unknown): string | null {
+  const e = (err ?? {}) as { code?: string; message?: string };
+  if (/Tenant or user not found/i.test(e.message ?? "")) {
+    return "El pooler no reconoce el usuario: debe ser postgres.<ref>, no solo postgres.";
+  }
+  switch (e.code) {
+    case "ENETUNREACH":
+    case "EHOSTUNREACH":
+    case "ENOTFOUND":
+      return "Sin ruta al host: casi siempre es db.<ref>.supabase.co (solo IPv6). Cambia DATABASE_URL al Session pooler.";
+    case "ETIMEDOUT":
+      return "Tiempo agotado: la red o un proxy bloquea la salida al puerto 5432 (prueba Test-NetConnection).";
+    case "ECONNREFUSED":
+      return "Conexión rechazada: revisa host y puerto de DATABASE_URL.";
+    case "28P01":
+      return "Usuario o contraseña incorrectos.";
+    case "ENOENT":
+      return "Falta un archivo local (normalmente el certificado de DB_SSL_CA_PATH).";
+    case "SELF_SIGNED_CERT_IN_CHAIN":
+    case "UNABLE_TO_VERIFY_LEAF_SIGNATURE":
+      return "Certificado TLS no verificado: revisa DB_SSL_CA_PATH.";
+    default:
+      return null;
+  }
+}
+
 function crearPool(): Pool {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("Falta DATABASE_URL (cadena de conexión de Supabase → Project Settings → Database)");
+  const raw = process.env.DATABASE_URL;
+  if (!raw) {
+    throw new Error("Falta DATABASE_URL (cadena de conexión de Supabase → Connect → Session pooler)");
   }
   const pool = new Pool({
-    connectionString,
+    connectionString: normalizarConnectionString(raw),
     ssl: sslConfig(),
     max: Number(process.env.DB_POOL_MAX || 10),
     idleTimeoutMillis: 30_000,
@@ -140,6 +200,8 @@ export function getPool(): Promise<Pool> {
     try {
       pool = crearPool();
     } catch (err) {
+      const pista = pistaConexion(err);
+      console.error("[db] No se pudo crear el pool:", (err as Error)?.message ?? err, pista ? `\n  Pista: ${pista}` : "");
       return Promise.reject(err);
     }
     poolPromise = pool
@@ -147,6 +209,8 @@ export function getPool(): Promise<Pool> {
       .then(() => pool)
       .catch(async (err: unknown) => {
         poolPromise = null;
+        const pista = pistaConexion(err);
+        console.error("[db] Falló la conexión inicial:", (err as Error)?.message ?? err, pista ? `\n  Pista: ${pista}` : "");
         await pool.end().catch(() => undefined);
         throw err;
       });

@@ -1,6 +1,6 @@
 // routes/auth.routes.ts
 // Login del panel por sesión (cookie). Reemplaza a routes/authRoutes.js con la misma API:
-//   POST /api/auth/login   { email, password } → 200 { ok, usuario } | 400 | 401
+//   POST /api/auth/login   { email, password } → 200 { ok, usuario } | 400 | 401 | 503
 //   POST /api/auth/logout  → 200 { ok }
 //   GET  /api/auth/me      → 200 usuario | 401
 // requireLogin / requireRole (middleware/auth.js) leen req.session.usuario sin cambios.
@@ -44,8 +44,22 @@ interface FilaUsuario {
 
 const ROLES: readonly RolUsuario[] = ["recepcion", "doctor", "direccion"];
 const MENSAJE_CREDENCIALES = "Correo o contraseña incorrectos";
+const MENSAJE_DB_CAIDA = "El servicio no está disponible. Intenta de nuevo en unos segundos.";
 const MAX_EMAIL = 160; // = usuarios.email
 const MAX_PASSWORD = 256;
+
+/** Tope para encontrar al usuario; menor que el connectionTimeoutMillis (10 s) del pool. */
+const LOGIN_DB_TIMEOUT_MS_DEFECTO = 5_000;
+
+const CODIGOS_RED = new Set([
+  "ETIMEDOUT", "ECONNREFUSED", "ECONNRESET", "ENOTFOUND",
+  "ENETUNREACH", "EHOSTUNREACH", "EAI_AGAIN",
+]);
+
+const SQL_USUARIO = `SELECT id, nombre, email, password_hash, rol, doctor_id, activo
+                     FROM usuarios
+                     WHERE lower(email) = $1
+                     LIMIT 1`;
 
 /**
  * Hash señuelo con el mismo costo que los reales (10, ver README). Si el correo no
@@ -56,6 +70,43 @@ const HASH_SENUELO = bcrypt.hashSync("senuelo-anti-enumeracion", 10);
 
 function esRol(valor: string): valor is RolUsuario {
   return (ROLES as readonly string[]).includes(valor);
+}
+
+function esErrorDeRed(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const { code, message } = err as { code?: unknown; message?: unknown };
+  if (typeof code === "string" && CODIGOS_RED.has(code)) return true;
+  return typeof message === "string" && /timeout|Connection terminated/i.test(message);
+}
+
+function limiteMs(): number {
+  const ms = Number(process.env.LOGIN_DB_TIMEOUT_MS);
+  return Number.isFinite(ms) && ms > 0 ? ms : LOGIN_DB_TIMEOUT_MS_DEFECTO;
+}
+
+/**
+ * Busca al usuario con un tope de tiempo. Si se agota, rechaza con code ETIMEDOUT.
+ * La consulta original sigue su curso en el pool; su resultado tardío se descarta.
+ */
+async function buscarUsuario(email: string): Promise<FilaUsuario | undefined> {
+  const ms = limiteMs();
+  let temporizador: ReturnType<typeof setTimeout> | undefined;
+  const limite = new Promise<never>((_, reject) => {
+    temporizador = setTimeout(
+      () => reject(Object.assign(new Error(`La base de datos no respondió en ${ms} ms`), { code: "ETIMEDOUT" })),
+      ms,
+    );
+  });
+  const consulta = (async () => {
+    const pool = await getPool();
+    const { rows } = await pool.query<FilaUsuario>(SQL_USUARIO, [email]);
+    return rows[0];
+  })();
+  try {
+    return await Promise.race([consulta, limite]);
+  } finally {
+    clearTimeout(temporizador);
+  }
 }
 
 /** Nuevo id de sesión tras autenticar: evita la fijación de sesión. */
@@ -82,17 +133,22 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
     return;
   }
 
+  let usuario: FilaUsuario | undefined;
   try {
-    const pool = await getPool();
-    const { rows } = await pool.query<FilaUsuario>(
-      `SELECT id, nombre, email, password_hash, rol, doctor_id, activo
-       FROM usuarios
-       WHERE lower(email) = $1
-       LIMIT 1`,
-      [email],
-    );
-    const usuario = rows[0];
+    usuario = await buscarUsuario(email);
+  } catch (err) {
+    if (esErrorDeRed(err)) {
+      // Caída o lentitud de Supabase: 503 reintentable, sin filtrar host ni códigos al cliente.
+      const e = err as { code?: unknown; message?: unknown };
+      console.error("[auth] Base de datos inalcanzable en login:", e.code ?? "sin código", e.message);
+      res.set("Retry-After", "5").status(503).json({ error: MENSAJE_DB_CAIDA });
+      return;
+    }
+    next(err); // tipado / SQL → manejador central de server.js → 500 genérico
+    return;
+  }
 
+  try {
     // Siempre se compara (contra el hash real o el señuelo) ANTES de decidir.
     const claveValida = await bcrypt.compare(password, usuario?.password_hash ?? HASH_SENUELO);
 
