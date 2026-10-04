@@ -10,6 +10,7 @@ const { getPool } = require('./db');
 const wa = require('./whatsapp');
 const { createVetModule, requireApiKey } = require('./modules/vet');
 const { createDerivacionesModule } = require('./modules/derivaciones');
+const { createPlanModule } = require('./modules/plan');
 
 const dbSchema = process.env.DB_SCHEMA || 'public';
 
@@ -24,6 +25,12 @@ const derivacionesModule = createDerivacionesModule({
   notifier: wa,                                    // usa wa.enviarTexto(to, texto)
   authorize: requireRole('recepcion', 'direccion'),
 });
+// Plan comercial de Astra: módulos premium, pruebas de 3 días y tope de operadores.
+const planModule = createPlanModule({
+  getPool,
+  schema: dbSchema,
+  authorizeIniciarPrueba: requireRole('direccion'),
+});
 
 // Falla al arrancar con un mensaje claro si algún router no se resolvió.
 for (const [nombre, mw] of Object.entries({
@@ -32,6 +39,7 @@ for (const [nombre, mw] of Object.entries({
   'vetModule.router': vetModule.router,
   'derivacionesModule.router': derivacionesModule.router,
   'derivacionesModule.iaRouter': derivacionesModule.iaRouter,
+  'planModule.router': planModule.router,
 })) {
   if (typeof mw !== 'function') throw new Error(`[server] ${nombre} no es un middleware (recibido: ${typeof mw})`);
 }
@@ -40,6 +48,7 @@ require('./jobs/reportJob');
 
 const app = express();
 app.use(express.json());
+app.locals.plan = planModule; // lo usa routes/adminApi.js para los bloqueos premium
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'cambia-este-secreto-en-produccion',
@@ -64,6 +73,9 @@ app.use('/api/auth', authRouter);
 
 // Bandeja de derivaciones del panel: sesión + rol (recepcion/direccion)
 app.use('/api/derivaciones', requireLogin, derivacionesModule.router);
+
+// Estado del plan para pintar candados en el panel; POST /pruebas activa la prueba de 3 días.
+app.use('/api/plan', requireLogin, planModule.router);
 
 // Servicios para el Asistente de WhatsApp: API key, sin sesión.
 // Deben ir ANTES de app.use('/api', requireLogin, ...) o requireLogin respondería 401.

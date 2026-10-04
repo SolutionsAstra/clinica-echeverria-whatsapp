@@ -472,7 +472,7 @@ export async function citasParaRecordatorios(): Promise<
     JOIN doctores d ON d.id = c.doctor_id
     JOIN especialidades e ON e.id = c.especialidad_id
     WHERE c.estado = 'confirmada'
-      AND (NOT c.recordatorio_24h_enviado OR NOT c.recordatorio_2h_enviado)
+      AND NOT c.recordatorio_2h_enviado
       AND c.fecha_hora_inicio > NOW()`;
 }
 

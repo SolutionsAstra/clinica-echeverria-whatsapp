@@ -25,18 +25,13 @@ import {
   Sun,
   Sunset,
 } from "lucide-react";
+import { ESPECIALIDADES } from "./workspace/especialidades";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Configuración de dominio
  * Las claves y duraciones replican src/modules/vet/domain/specialty del backend.
- * Los colores son compartidos con el calendario unificado: impórtalos desde aquí.
+ * Especialidades (colores y duraciones): workspace/especialidades.js, compartido con el calendario.
  * ──────────────────────────────────────────────────────────────────────────── */
-export const ESPECIALIDADES = {
-  neurologia: { nombre: "Neurología", color: "#8B9CF7", duracionMin: 60 },
-  eeg: { nombre: "EEG", color: "#5EC4C0", duracionMin: 120 },
-  pediatria: { nombre: "Pediatría", color: "#E8B96A", duracionMin: 30 },
-  estetica: { nombre: "Estética", color: "#E59AB4", duracionMin: 45 },
-};
 
 const CLINICA = {
   aperturaMin: 8 * 60, // 08:00

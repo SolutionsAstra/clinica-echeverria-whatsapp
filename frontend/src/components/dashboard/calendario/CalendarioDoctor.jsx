@@ -1,0 +1,208 @@
+/**
+ * Calendario semanal de un doctor, agrupado por color de especialidad.
+ *
+ *   ┌──────┬──────────┬──────────┬──────────┐
+ *   │      │ lun 28   │ mar 29   │ mié 30   │   cabecera fija; hoy en platino
+ *   ├──────┼──────────┼──────────┼──────────┤
+ *   │ 08   │▌Pediatría│          │          │   bloque: tinte 14 % + filete de 2 px del color
+ *   │ 09   │          │▌Neuro ▌Neuro        │   solapes → carriles
+ *   └──────┴──────────┴──────────┴──────────┘
+ * La rejilla necesita ≈ 3.5rem + N × 8.5rem; si no cabe, se desplaza dentro de su propio marco.
+ */
+import { useMemo, useState } from "react";
+import { FOCO } from "../workspace/tokens";
+import { ORDEN_ESPECIALIDADES, especialidad } from "../workspace/especialidades";
+import { diaEnZona } from "../workspace/agenda";
+import { maquetarSemana, partesEnZona, resumenPorEspecialidad } from "./semana";
+
+const PX_POR_MIN = 1.2; // 72 px por hora: una cita de 30 min deja dos líneas legibles
+const ANCHO_COLUMNA = "8.5rem";
+
+const fmtCabecera = new Intl.DateTimeFormat("es-VE", { timeZone: "UTC", weekday: "short", day: "numeric" });
+const fmtDiaLargo = new Intl.DateTimeFormat("es-VE", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long" });
+const aFecha = (dia) => new Date(`${dia}T12:00:00Z`);
+
+const hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+
+function conAlfa(hex, alfa) {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alfa})`;
+}
+
+function Leyenda({ resumen, ocultas, onAlternar }) {
+  const conteo = new Map(resumen.map((r) => [r.codigo, r.total]));
+  const codigos = [...ORDEN_ESPECIALIDADES, ...resumen.map((r) => r.codigo).filter((c) => !ORDEN_ESPECIALIDADES.includes(c))];
+  return (
+    <div role="group" aria-label="Mostrar u ocultar especialidades" className="flex flex-wrap items-center gap-2">
+      {codigos.map((codigo) => {
+        const esp = especialidad(codigo);
+        const visible = !ocultas.has(codigo);
+        const total = conteo.get(codigo) ?? 0;
+        return (
+          <button
+            key={codigo}
+            type="button"
+            aria-pressed={visible}
+            onClick={() => onAlternar(codigo)}
+            className={`inline-flex h-8 cursor-pointer items-center gap-2 rounded-full border px-3 text-xs transition-colors duration-200 ${FOCO} ${
+              visible ? "border-[#2A4266] text-[#E6E9EE] hover:border-[#3A4F6E]" : "border-[#1A2D48] text-[#7D8BA0] hover:text-[#A3AEBD]"
+            }`}
+          >
+            <span
+              aria-hidden
+              className="h-2 w-2 rounded-full border"
+              style={{ backgroundColor: visible ? esp.color : "transparent", borderColor: esp.color }}
+            />
+            {esp.nombre}
+            <span className="tabular-nums text-[#7D8BA0]">{total}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Bloque({ b, inicioMin, unificada }) {
+  const esp = especialidad(b.especialidad);
+  const alto = Math.max(22, (b.finMin - b.inicioMin) * PX_POR_MIN - 2);
+  const noShow = b.estado === "no_show";
+  return (
+    <li
+      className={`absolute overflow-hidden rounded-[4px] border border-l-2 px-2 py-1 text-[11px] leading-tight text-[#E6E9EE] ${
+        noShow ? "opacity-55" : ""
+      }`}
+      style={{
+        top: (b.inicioMin - inicioMin) * PX_POR_MIN + 1,
+        height: alto,
+        left: `calc(${(b.carril / b.carriles) * 100}% + 2px)`,
+        width: `calc(${100 / b.carriles}% - 4px)`,
+        backgroundColor: conAlfa(esp.color, 0.14),
+        borderColor: conAlfa(esp.color, 0.4),
+        borderLeftColor: esp.color,
+      }}
+      title={`${hhmm(b.inicioMin)}–${hhmm(b.finMin)} ${b.paciente} (${esp.nombre})`}
+    >
+      <p className="tabular-nums text-[#C7CCD3]">
+        {hhmm(b.inicioMin)}
+        <span className="sr-only"> a {hhmm(b.finMin)}, {esp.nombre}</span>
+        {noShow && <span className="ml-1.5 text-[#E8A9A9]">No-show</span>}
+      </p>
+      <p className={`truncate font-medium ${noShow ? "line-through" : ""}`}>{b.paciente}</p>
+      {unificada && alto > 44 && <p className="truncate text-[#A3AEBD]">{b.doctor}</p>}
+    </li>
+  );
+}
+
+/**
+ * @param {{ citas: object[], doctorId: number|null, horario?: object, lunes: string, ahora: number, unificada?: boolean }} props
+ *   doctorId null + unificada = Multi-Calendario (solo con el módulo activo).
+ */
+export default function CalendarioDoctor({ citas, doctorId, horario, lunes, ahora, unificada = false }) {
+  const [ocultas, setOcultas] = useState(() => new Set());
+
+  const m = useMemo(
+    () => maquetarSemana(citas, { doctorId: unificada ? null : doctorId, lunes, horario, ocultas }),
+    [citas, doctorId, unificada, lunes, horario, ocultas],
+  );
+  const resumen = useMemo(() => resumenPorEspecialidad(m.citasSemana), [m.citasSemana]);
+
+  const alternar = (codigo) =>
+    setOcultas((previas) => {
+      const siguiente = new Set(previas);
+      if (siguiente.has(codigo)) siguiente.delete(codigo);
+      else siguiente.add(codigo);
+      return siguiente;
+    });
+
+  const hoy = diaEnZona(ahora);
+  const ahoraMin = partesEnZona(ahora).minutos;
+  const alto = (m.finMin - m.inicioMin) * PX_POR_MIN;
+  const horas = [];
+  for (let h = m.inicioMin; h < m.finMin; h += 60) horas.push(h);
+  const columnas = { gridTemplateColumns: `3.5rem repeat(${m.columnas.length}, minmax(${ANCHO_COLUMNA}, 1fr))` };
+
+  return (
+    <div>
+      <Leyenda resumen={resumen} ocultas={ocultas} onAlternar={alternar} />
+
+      <div className="relative mt-4 overflow-x-auto rounded-[10px] border border-[#1A2D48] bg-[#0E1F36]/90">
+        {/* Cabecera */}
+        <div className="grid border-b border-[#1A2D48]" style={columnas}>
+          <span aria-hidden />
+          {m.columnas.map((c) => {
+            const esHoy = c.dia === hoy;
+            return (
+              <div key={c.dia} className="border-l border-[#1A2D48] px-3 py-3">
+                <p className={`text-sm capitalize ${esHoy ? "font-semibold text-[#F2F4F7]" : "text-[#A3AEBD]"}`}>
+                  {fmtCabecera.format(aFecha(c.dia))}
+                  {esHoy && <span className="ml-2 text-xs font-normal text-[#86D5BC]">Hoy</span>}
+                </p>
+                {!c.laborable && <p className="mt-0.5 text-[11px] text-[#7D8BA0]">Fuera de horario</p>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Cuerpo */}
+        <div className="grid" style={columnas}>
+          <div aria-hidden className="relative" style={{ height: alto }}>
+            {horas.map((h) => (
+              <span
+                key={h}
+                className="absolute right-2 -translate-y-1/2 text-[11px] tabular-nums text-[#7D8BA0] first:translate-y-0"
+                style={{ top: (h - m.inicioMin) * PX_POR_MIN }}
+              >
+                {hhmm(h)}
+              </span>
+            ))}
+          </div>
+
+          {m.columnas.map((c) => (
+            <div
+              key={c.dia}
+              className={`relative border-l border-[#1A2D48] ${c.laborable ? "" : "bg-[#0B192C]/50"}`}
+              style={{ height: alto }}
+            >
+              {horas.slice(1).map((h) => (
+                <span
+                  key={h}
+                  aria-hidden
+                  className="absolute inset-x-0 border-t border-[#1A2D48]/70"
+                  style={{ top: (h - m.inicioMin) * PX_POR_MIN }}
+                />
+              ))}
+
+              {c.dia === hoy && ahoraMin >= m.inicioMin && ahoraMin <= m.finMin && (
+                <span
+                  aria-hidden
+                  className="absolute inset-x-0 z-10 border-t border-[#E6E9EE]"
+                  style={{ top: (ahoraMin - m.inicioMin) * PX_POR_MIN }}
+                >
+                  <span className="absolute -left-[3px] -top-[3.5px] h-1.5 w-1.5 rounded-full bg-[#E6E9EE]" />
+                </span>
+              )}
+
+              <ol aria-label={`${fmtDiaLargo.format(aFecha(c.dia))}: ${c.bloques.length} citas`} className="absolute inset-0">
+                {c.bloques.map((b) => (
+                  <Bloque key={b.id} b={b} inicioMin={m.inicioMin} unificada={unificada} />
+                ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+
+        {m.total === 0 && (
+          <p className="pointer-events-none absolute inset-x-0 top-1/2 text-center text-sm text-[#A3AEBD]">
+            Sin citas esta semana.
+          </p>
+        )}
+      </div>
+
+      {m.canceladas > 0 && (
+        <p className="mt-3 text-xs text-[#7D8BA0]">
+          {m.canceladas === 1 ? "1 cita cancelada no se muestra." : `${m.canceladas} citas canceladas no se muestran.`}
+        </p>
+      )}
+    </div>
+  );
+}

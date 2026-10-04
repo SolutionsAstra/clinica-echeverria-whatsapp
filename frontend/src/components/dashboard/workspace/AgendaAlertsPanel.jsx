@@ -1,5 +1,5 @@
 import { AlertTriangle, CalendarClock, CheckCheck, Clock3, RotateCw } from "lucide-react";
-import { ESPECIALIDADES } from "../BandejaDerivaciones";
+import { ESPECIALIDADES } from "./especialidades";
 import { MAX_PROXIMAS_CITAS, ZONA_CLINICA } from "./agenda";
 import { COLOR_NEUTRO, ESTADO_CONFIRMACION, FOCO, LINEA, VIDRIO } from "./tokens";
 

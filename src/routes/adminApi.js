@@ -8,6 +8,19 @@ const router = express.Router();
 const db = require('../db');
 const { requireRole } = require('../middleware/auth');
 const { generarYEnviarReporte } = require('../jobs/reportJob');
+const wa = require('../whatsapp');
+const { responderErrorPlan } = require('../modules/plan');
+
+const TZ_NEGOCIO = 'America/Caracas';
+
+// Plan comercial de Astra (src/modules/plan). server.js lo inyecta: app.locals.plan = planModule
+function plan(req) {
+  const modulo = req.app.locals.plan;
+  if (!modulo) throw new Error('[adminApi] Falta app.locals.plan (ver server.js)');
+  return modulo;
+}
+// 403 { error: 'MODULO_PREMIUM', mensaje, modulo } si el módulo no está contratado ni en prueba.
+const requireModulo = (nombre) => (req, res, next) => plan(req).requireModulo(nombre)(req, res, next);
 
 // Doctor: solo ve sus propias citas/métricas. Fuerza el filtro sin importar lo que mande el query string.
 function doctorIdEfectivo(req) {
@@ -59,6 +72,25 @@ router.post('/citas/:id/no-show', requireRole('recepcion', 'direccion', 'doctor'
   } catch (err) { next(err); }
 });
 
+// Recordatorio manual (reemplaza al automático de 24 h). Premium: Notificaciones Avanzadas.
+// Solo WhatsApp: la tabla pacientes no guarda correo, así que el canal de correo queda pendiente.
+router.post('/citas/:id/recordatorio-manual',
+  requireRole('recepcion', 'direccion'),
+  requireModulo('notificaciones_avanzadas'),
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      const cita = (await db.listarCitas({ estado: 'confirmada' })).find(c => c.id === id);
+      if (!cita) return res.status(404).json({ error: 'NOT_FOUND', mensaje: 'La cita no existe o ya no está confirmada' });
+      const cuando = new Date(cita.fecha_hora_inicio).toLocaleString('es-VE', {
+        timeZone: TZ_NEGOCIO, weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+      });
+      await wa.enviarTexto(cita.paciente_telefono,
+        `Recordatorio: tienes cita de ${cita.especialidad_nombre} con ${cita.doctor_nombre} el ${cuando}. Si necesitas cambiarla, escríbenos por aquí.`);
+      res.json({ ok: true, canales: ['whatsapp'] });
+    } catch (err) { next(err); }
+  });
+
 router.post('/citas/:id/reprogramar', requireRole('recepcion', 'direccion'), async (req, res, next) => {
   try {
     const { nueva_fecha_hora_inicio, nueva_fecha_hora_fin } = req.body;
@@ -85,12 +117,12 @@ router.put('/doctores/:id/horario', requireRole('direccion'), async (req, res, n
   } catch (err) { next(err); }
 });
 
-// ---------------- Reportes (solo dirección) ----------------
-router.get('/reportes', requireRole('direccion'), async (req, res, next) => {
+// ---------------- Reportes (solo dirección, módulo premium) ----------------
+router.get('/reportes', requireRole('direccion'), requireModulo('reportes'), async (req, res, next) => {
   try { res.json(await db.listarReportes()); } catch (err) { next(err); }
 });
 
-router.post('/reportes/generar-ahora', requireRole('direccion'), async (req, res, next) => {
+router.post('/reportes/generar-ahora', requireRole('direccion'), requireModulo('reportes'), async (req, res, next) => {
   try { await generarYEnviarReporte(); res.json({ ok: true }); }
   catch (err) { next(err); }
 });
@@ -113,6 +145,9 @@ router.post('/usuarios', requireRole('direccion'), async (req, res, next) => {
     if (password.length < 6) return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
     if (rol === 'doctor' && !doctor_id) return res.status(400).json({ error: 'Selecciona a qué doctor corresponde esta cuenta' });
 
+    // Tope de operadores del plan. El trigger de la BD es la garantía final ante altas simultáneas.
+    await plan(req).service.exigirCupoOperador();
+
     const password_hash = await bcrypt.hash(password, 10);
     const nuevo = await db.crearUsuario({
       nombre, email: email.toLowerCase().trim(), password_hash, rol,
@@ -120,6 +155,7 @@ router.post('/usuarios', requireRole('direccion'), async (req, res, next) => {
     });
     res.json({ ok: true, id: nuevo.id });
   } catch (err) {
+    if (responderErrorPlan(err, res)) return;
     if (String(err.message || '').includes('UNIQUE')) return res.status(409).json({ error: 'Ese correo ya está registrado' });
     next(err);
   }
@@ -134,9 +170,17 @@ router.put('/usuarios/:id', requireRole('direccion'), async (req, res, next) => 
     if (id === req.session.usuario.id && activo === false) {
       return res.status(400).json({ error: 'No puedes desactivar tu propia cuenta' });
     }
+    if (activo === true) {
+      // Reactivar una cuenta consume cupo igual que crearla.
+      const actual = (await db.listarUsuarios()).find(u => u.id === id);
+      if (actual && !actual.activo) await plan(req).service.exigirCupoOperador();
+    }
     await db.actualizarUsuario(id, { nombre, rol, doctor_id: rol === 'doctor' ? Number(doctor_id) : null, activo });
     res.json({ ok: true });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (responderErrorPlan(err, res)) return;
+    next(err);
+  }
 });
 
 router.post('/usuarios/:id/reset-password', requireRole('direccion'), async (req, res, next) => {

@@ -1,6 +1,10 @@
 // jobs/reminders.js
-// Cron cada 10 minutos: revisa qué citas caen en la ventana de 24h o 2h
-// y aún no tienen ese recordatorio marcado como enviado en la base de datos.
+// Cron cada 10 minutos: avisa al paciente 2 h antes de su cita.
+//
+// El recordatorio automático de 24 h se retiró (2026-10-04). Su reemplazo es el botón
+// "Lanzar Recordatorio Manual WhatsApp / Correo" del panel, que pertenece al Módulo de
+// Notificaciones Avanzadas de Astra (POST /api/citas/:id/recordatorio-manual).
+// La notificación inmediata al reservar sigue igual (módulo de derivaciones y engine.js).
 
 const cron = require('node-cron');
 const db = require('../db');
@@ -18,14 +22,6 @@ async function revisarRecordatorios() {
   const citas = await db.citasParaRecordatorios();
 
   for (const cita of citas) {
-    if (!cita.recordatorio_24h_enviado && dentroDeVentana(cita.fecha_hora_inicio, 24)) {
-      await wa.enviarBotones(cita.paciente_telefono,
-        `Recordatorio: mañana tienes cita con ${cita.doctor_nombre} a las ${new Date(cita.fecha_hora_inicio).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}. ¿Confirmas asistencia?`,
-        [{ id: 'record_si', title: 'Sí, confirmo' }, { id: 'record_no', title: 'No, reprogramar' }]
-      );
-      await db.marcarRecordatorioEnviado(cita.id, '24h');
-    }
-
     if (!cita.recordatorio_2h_enviado && dentroDeVentana(cita.fecha_hora_inicio, 2)) {
       await wa.enviarTexto(cita.paciente_telefono, `Tu cita es en 2 horas, con ${cita.doctor_nombre}. Te esperamos en la clínica.`);
       await db.marcarRecordatorioEnviado(cita.id, '2h');

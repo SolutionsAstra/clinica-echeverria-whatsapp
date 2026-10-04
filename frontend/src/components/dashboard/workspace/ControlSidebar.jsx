@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, LogOut } from "lucide-react";
+import { Loader2, Lock, LogOut } from "lucide-react";
 import { ZONA_CLINICA } from "./agenda";
 import { ESTADO_RED, FOCO } from "./tokens";
 
@@ -71,21 +71,52 @@ function IndicadorRed({ estado, latenciaMs }) {
   );
 }
 
-function EnlaceSeccion({ href, children, cuenta }) {
+/**
+ * Entrada del menú. Es un botón (la navegación es interna, sin recarga) con aria-current.
+ * `bloqueada` solo añade el candado: la sección se abre y muestra su pantalla premium.
+ */
+function EntradaMenu({ seccion, activa, onNavegar }) {
+  const { id, etiqueta, cuenta, bloqueada } = seccion;
   return (
-    <a
-      href={href}
-      className={`flex h-9 cursor-pointer items-center justify-between rounded-md px-3 text-sm text-[#A3AEBD] transition-colors duration-200 hover:bg-[#12284A]/60 hover:text-[#E6E9EE] ${FOCO}`}
-    >
-      {children}
-      {cuenta != null && <span className="tabular-nums text-[#7D8BA0]">{cuenta}</span>}
-    </a>
+    <li className="shrink-0">
+      <button
+        type="button"
+        onClick={() => onNavegar(id)}
+        aria-current={activa ? "page" : undefined}
+        className={`relative flex h-9 w-full cursor-pointer items-center gap-3 whitespace-nowrap rounded-md px-3 text-sm transition-colors duration-200 ${FOCO} ${
+          activa ? "bg-[#12284A] text-[#F2F4F7]" : "text-[#A3AEBD] hover:bg-[#12284A]/60 hover:text-[#E6E9EE]"
+        }`}
+      >
+        {activa && <span aria-hidden className="absolute inset-y-2 left-0 hidden w-px bg-[#E6E9EE] xl:block" />}
+        <span>{etiqueta}</span>
+        {bloqueada && (
+          <>
+            <Lock aria-hidden className="h-3.5 w-3.5 text-[#7D8BA0]" strokeWidth={1.75} />
+            <span className="sr-only">(módulo premium)</span>
+          </>
+        )}
+        {cuenta != null && <span className="ml-auto tabular-nums text-[#7D8BA0]">{cuenta}</span>}
+      </button>
+    </li>
   );
 }
 
-export default function ControlSidebar({ usuario, red, conteos, onCerrarSesion, cerrandoSesion, errorCierre }) {
+/**
+ * ≥ xl: columna fija de 15 rem (identidad, reloj, menú, red, sesión).
+ * < xl: barra superior; el menú pasa a una fila con desplazamiento horizontal propio.
+ */
+export default function ControlSidebar({
+  usuario,
+  red,
+  secciones,
+  activa,
+  onNavegar,
+  onCerrarSesion,
+  cerrandoSesion,
+  errorCierre,
+}) {
   return (
-    <div className="flex flex-wrap items-center gap-x-10 gap-y-5 px-5 py-4 lg:px-8 xl:h-full xl:flex-col xl:flex-nowrap xl:items-stretch xl:gap-10 xl:px-5 xl:py-8">
+    <div className="flex flex-wrap items-center gap-x-10 gap-y-5 px-5 py-4 lg:px-8 xl:h-full xl:flex-col xl:flex-nowrap xl:items-stretch xl:gap-9 xl:px-5 xl:py-8">
       {/* Identidad */}
       <div className="flex items-center gap-3">
         <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#243B5A]">
@@ -101,13 +132,12 @@ export default function ControlSidebar({ usuario, red, conteos, onCerrarSesion, 
 
       <RelojClinica />
 
-      <nav aria-label="Secciones del panel" className="-mx-3 hidden flex-col gap-0.5 xl:flex">
-        <EnlaceSeccion href="#derivaciones" cuenta={conteos.derivaciones}>
-          Derivaciones
-        </EnlaceSeccion>
-        <EnlaceSeccion href="#proximas-citas" cuenta={conteos.citasRestantes}>
-          Próximas citas
-        </EnlaceSeccion>
+      <nav aria-label="Secciones del panel" className="order-last -mx-1 w-full min-w-0 xl:order-none xl:-mx-3 xl:w-auto">
+        <ul className="flex gap-1 overflow-x-auto pb-1 [scrollbar-width:thin] xl:flex-col xl:gap-0.5 xl:overflow-visible xl:pb-0">
+          {secciones.map((s) => (
+            <EntradaMenu key={s.id} seccion={s} activa={s.id === activa} onNavegar={onNavegar} />
+          ))}
+        </ul>
       </nav>
 
       <div className="flex w-full flex-wrap items-center gap-x-8 gap-y-4 sm:ml-auto sm:w-auto xl:mt-auto xl:block xl:w-full xl:space-y-6 xl:border-t xl:border-[#1A2D48] xl:pt-6">
