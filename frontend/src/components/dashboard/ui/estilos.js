@@ -23,3 +23,10 @@ export const TABLA = "w-full min-w-[56rem] border-collapse text-left text-sm";
 export const TH = "border-b border-[#1A2D48] px-5 py-3 text-xs font-normal text-[#7D8BA0]";
 export const TD = "border-b border-[#1A2D48] px-5 py-3.5 align-middle text-[#E6E9EE]";
 export const FILA = "transition-colors duration-150 last:[&>td]:border-b-0 hover:bg-[#12284A]/40";
+/** Tamaños de acciones compactas: barra de acciones, tarjeta, fila de tabla y bloque del calendario. */
+export const TAMANO_COMPACTO = {
+  normal: "h-9 gap-2 whitespace-nowrap px-4 text-sm",
+  compacto: "min-h-7 w-full gap-1.5 px-2 py-1 text-left text-[11px] leading-tight",
+  icono: "h-8 gap-1 px-2",
+  mini: "h-5 gap-0.5 px-1",
+};

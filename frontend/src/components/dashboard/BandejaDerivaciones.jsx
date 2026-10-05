@@ -65,7 +65,7 @@ const FOCO =
  * ──────────────────────────────────────────────────────────────────────────── */
 const haceMin = (m) => new Date(Date.now() - m * 60000).toISOString();
 
-export const SOLICITUDES_DEMO = [
+const SOLICITUDES_DEMO = [
   { id: "drv_1041", paciente: "Ana Pérez", telefono: "584141234567", especialidad: "neurologia", bloque: "manana", fecha: "2026-09-28", doctorId: 1, doctorName: "Dr. Rojas", capturadaEn: haceMin(42), notas: "Cefalea recurrente desde hace 3 semanas" },
   { id: "drv_1042", paciente: "Mateo Díaz", acudiente: "Carolina Díaz", telefono: "584241987654", especialidad: "pediatria", bloque: "tarde", fecha: "2026-09-28", doctorId: 2, doctorName: "Dra. Salas", capturadaEn: haceMin(35) },
   { id: "drv_1043", paciente: "Luis Carrillo", telefono: "584125550192", especialidad: "eeg", bloque: "manana", fecha: "2026-09-29", doctorId: 5, doctorName: "Dra. Méndez", capturadaEn: haceMin(28), horasDisponibles: ["08:00", "12:00", "14:00"] },
@@ -79,7 +79,7 @@ export const SOLICITUDES_DEMO = [
  * En producción reemplázalo por una llamada a TU servidor (nunca directo a Meta
  * ni a /api/vet con x-api-key desde el navegador).
  */
-export async function simularReservaYNotificacion(payload) {
+async function simularReservaYNotificacion(payload) {
   console.info("[simulación] Reservar & Notificar →", payload);
   await new Promise((r) => setTimeout(r, 900));
   return { appointmentId: Math.floor(Math.random() * 90000) + 10000, whatsapp: "enviado" };
@@ -429,7 +429,7 @@ export default function BandejaDerivaciones({
   const temporizadores = useRef([]);
   const ahora = useAhora();
 
-  useEffect(() => setPendientes(solicitudes), [solicitudes]);
+  //useEffect(() => setPendientes(solicitudes), [solicitudes]);
   useEffect(() => () => temporizadores.current.forEach(clearTimeout), []);
 
   useEffect(() => {
@@ -458,7 +458,7 @@ export default function BandejaDerivaciones({
         });
         const t = setTimeout(() => {
           setPendientes((lista) => lista.filter((x) => x.id !== s.id));
-          setBorradores(({ [s.id]: _descartado, ...resto }) => resto);
+          setBorradores(({ ...resto }) => resto);
         }, 1400);
         temporizadores.current.push(t);
       } catch (err) {

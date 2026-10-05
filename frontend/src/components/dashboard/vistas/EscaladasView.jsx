@@ -19,8 +19,7 @@ export default function EscaladasView() {
       {escaladas.cargando && !escaladas.datos ? (
         <CargaVista />
       ) : escaladas.error && !escaladas.datos ? (
-        <ErrorVista onReintentar={escaladas.recargar} />
-      ) : (
+    <ErrorVista error={escaladas.error} onReintentar={escaladas.recargar} />      ) : (
         <div className={`${SUPERFICIE} overflow-x-auto`}>
           <table className={TABLA}>
             <thead>

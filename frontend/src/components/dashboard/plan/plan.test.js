@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MENSAJES, MODULO, cupoOperadores, estadoModulo } from "./plan.js";
+import { esBloqueoPremium } from "./plan.js";
 
 const DIA = 86_400_000;
 const AHORA = Date.parse("2026-10-04T15:00:00Z");
@@ -19,7 +20,7 @@ const plan = (modulos = {}, operadores = { activos: 1, maximo: 2 }) => ({
 test("los mensajes comerciales son exactamente los acordados", () => {
   assert.equal(
     MENSAJES[MODULO.REPORTES],
-    "Módulo Premium Activo en Plan Corporativo. Consulte a Soluciones Astra para habilitar la analítica avanzada de ausentismo (No-show).",
+        "Módulo Premium Activo en Plan Corporativo. Consulte a Soluciones Astra para habilitar la analítica avanzada de ausentismo (Pacientes Inasistentes).",
   );
   assert.equal(MENSAJES[MODULO.MULTI_CALENDARIO], "Función Multi-Calendario Unificado disponible contactando a Soluciones Astra.");
   assert.equal(MENSAJES[MODULO.NOTIFICACIONES], "Requiere la activación del Módulo de Notificaciones Avanzadas de Astra.");
@@ -85,4 +86,12 @@ test("cupo de operadores: libre, lleno y excedido", () => {
   assert.equal(excedido.excedente, 1);
   assert.equal(cupoOperadores(null).conocido, false);
   assert.equal(cupoOperadores(null).lleno, false);
+});
+
+
+test("esBloqueoPremium: solo un 403 MODULO_PREMIUM, nunca un fallo de red ni otro 403", () => {
+  assert.equal(esBloqueoPremium({ status: 403, code: "MODULO_PREMIUM" }), true);
+  assert.equal(esBloqueoPremium({ status: 403, code: "Esa cita no pertenece a tu agenda" }), false);
+  assert.equal(esBloqueoPremium({ status: undefined, code: "SIN_CONEXION" }), false);
+  assert.equal(esBloqueoPremium(null), false);
 });

@@ -1,3 +1,6 @@
+/*全局 process*/
+/* eslint-disable no-undef */
+
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 

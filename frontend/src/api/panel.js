@@ -43,6 +43,17 @@ export const marcarNoShow = (id) => pedir(`/api/citas/${encodeURIComponent(id)}/
 export const enviarRecordatorioManual = (id) =>
   pedir(`/api/citas/${encodeURIComponent(id)}/recordatorio-manual`, { method: "POST" });
 
+/**
+ * POST /api/citas/manual → 201 { appointmentId, doctorId, doctorName, start, end, whatsapp: "en_cola" }
+ * Errores: 400 INVALID_INPUT · 409 SLOT_TAKEN · 422 SLOT_NOT_OFFERED · 503 BUSY_RETRY
+ */
+export const agendarCitaManual = ({ nombre, telefono, especialidad, doctorId, inicio, nombreAcudiente }) =>
+  pedir("/api/citas/manual", {
+    method: "POST",
+    body: json({ nombre, telefono, especialidad, doctorId, inicio, nombreAcudiente }),
+  });
+
+
 /* ---------------- Doctores ---------------- */
 
 /** GET /api/doctores → [{ id, nombre, email, especialidades: string[], horario: { dias, hora_inicio, hora_fin } }] */

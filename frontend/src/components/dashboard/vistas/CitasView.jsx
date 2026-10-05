@@ -19,13 +19,14 @@ import {
 import { enlaceTel, fechaHora, telefono } from "../ui/formato";
 import { BotonBloqueado } from "../ui/Premium";
 import { CargaVista, ContenedorVista, EncabezadoVista, ErrorVista, Resultado, VacioVista } from "../ui/Vista";
+import BotonRecordatorio from "../workspace/BotonRecordatorio";
 
 const ETIQUETA_RECORDATORIO = "Lanzar Recordatorio Manual WhatsApp / Correo";
 
 const ESTADOS = {
   confirmada: { nombre: "Confirmada", clase: "border-[#2C5B53] text-[#86D5BC]" },
   completada: { nombre: "Completada", clase: "border-[#2A4266] text-[#A3AEBD]" },
-  no_show: { nombre: "No-show", clase: "border-[#4A4230] text-[#C9AE72]" },
+  no_show: { nombre: "Inasistente", clase: "border-[#4A4230] text-[#C9AE72]" },
   cancelada: { nombre: "Cancelada", clase: "border-[#1A2D48] text-[#7D8BA0]" },
 };
 
@@ -112,7 +113,7 @@ function AccionesCita({ cita, ocupada, confirmando, onPedirCancelar, onSoltar, o
   return (
     <div className="flex justify-end gap-1.5">
       <button type="button" disabled={ocupada} onClick={() => onAccion(cita, "no-show")} className={BOTON_FANTASMA}>
-        No-show
+        Marcar inasistencia
       </button>
       <button type="button" disabled={ocupada} onClick={() => onPedirCancelar(cita.id)} className={BOTON_FANTASMA}>
         Cancelar
@@ -142,7 +143,7 @@ export default function CitasView({ citas, plan, ahora, rol }) {
       else await marcarNoShow(cita.id);
       setResultado({
         tipo: "ok",
-        texto: `${accion === "cancelar" ? "Cita cancelada" : "Marcada como no-show"}: ${cita.paciente_nombre}, ${fechaHora(cita.fecha_hora_inicio)}.`,
+        texto: `${accion === "cancelar" ? "Cita cancelada" : "Inasistencia registrada"}: ${cita.paciente_nombre}, ${fechaHora(cita.fecha_hora_inicio)}.`,
       });
       setConfirmando(null);
       citas.recargar();
@@ -228,7 +229,7 @@ export default function CitasView({ citas, plan, ahora, rol }) {
       {citas.cargando && !citas.datos ? (
         <CargaVista />
       ) : citas.error && !citas.datos ? (
-        <ErrorVista onReintentar={citas.recargar} />
+        <ErrorVista error={citas.error} onReintentar={citas.recargar} />
       ) : (
         <div className={`${SUPERFICIE} overflow-x-auto`}>
           <table className={TABLA}>
@@ -268,14 +269,24 @@ export default function CitasView({ citas, plan, ahora, rol }) {
                       <PildoraEstado estado={c.estado} />
                     </td>
                     <td className={`${TD} w-px whitespace-nowrap`}>
-                      <AccionesCita
-                        cita={c}
-                        ocupada={ocupada === c.id}
-                        confirmando={confirmando === c.id}
-                        onPedirCancelar={setConfirmando}
-                        onSoltar={() => setConfirmando(null)}
-                        onAccion={ejecutar}
-                      />
+                      <div className="flex items-center justify-end gap-1.5">
+                        {puedeRecordar && c.estado === "confirmada" && Date.parse(c.fecha_hora_inicio) > ahora && (
+                          <BotonRecordatorio
+                            citaId={c.id}
+                            paciente={c.paciente_nombre}
+                            habilitado={notificaciones.habilitado}
+                            variante="icono"
+                          />
+                        )}
+                        <AccionesCita
+                          cita={c}
+                          ocupada={ocupada === c.id}
+                          confirmando={confirmando === c.id}
+                          onPedirCancelar={setConfirmando}
+                          onSoltar={() => setConfirmando(null)}
+                          onAccion={ejecutar}
+                        />
+                      </div>
                     </td>
                   </tr>
                 );

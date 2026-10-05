@@ -1,6 +1,7 @@
 import { AlertTriangle, CalendarClock, CheckCheck, Clock3, RotateCw } from "lucide-react";
-import { ESPECIALIDADES } from "./especialidades";
+import BotonRecordatorio from "./BotonRecordatorio";
 import { MAX_PROXIMAS_CITAS, ZONA_CLINICA } from "./agenda";
+import { ESPECIALIDADES } from "./especialidades";
 import { COLOR_NEUTRO, ESTADO_CONFIRMACION, FOCO, LINEA, VIDRIO } from "./tokens";
 
 const fmtHora = new Intl.DateTimeFormat("es-VE", {
@@ -19,7 +20,7 @@ function cuandoEmpieza({ enCurso, minutosParaInicio }) {
   return m ? `En ${h} h ${m} min` : `En ${h} h`;
 }
 
-function TarjetaCita({ t }) {
+function TarjetaCita({ t, notificacionesHabilitadas }) {
   const esp = ESPECIALIDADES[t.especialidad];
   const color = esp?.color ?? COLOR_NEUTRO;
   const conf = ESTADO_CONFIRMACION[t.confirmacion];
@@ -61,6 +62,16 @@ function TarjetaCita({ t }) {
           Empieza en menos de una hora y el paciente no ha confirmado. Conviene llamar.
         </p>
       )}
+
+      <div className="mt-3 border-t border-[#1A2D48] pt-3">
+        <BotonRecordatorio
+          citaId={t.id}
+          paciente={t.paciente}
+          habilitado={notificacionesHabilitadas}
+          variante="compacto"
+          className="w-full"
+        />
+      </div>
     </li>
   );
 }
@@ -69,13 +80,20 @@ function Esqueleto() {
   return (
     <ul aria-hidden className="grid gap-3 sm:grid-cols-3 2xl:grid-cols-1">
       {Array.from({ length: MAX_PROXIMAS_CITAS }, (_, i) => (
-        <li key={i} className={`h-[8.5rem] rounded-md ${VIDRIO} ${LINEA} motion-safe:animate-pulse`} />
+        <li key={i} className={`h-[10.5rem] rounded-md ${VIDRIO} ${LINEA} motion-safe:animate-pulse`} />
       ))}
     </ul>
   );
 }
 
-export default function AgendaAlertsPanel({ tarjetas, restantesHoy, cargando, error, onReintentar }) {
+export default function AgendaAlertsPanel({
+  tarjetas,
+  restantesHoy,
+  cargando,
+  error,
+  onReintentar,
+  notificacionesHabilitadas = false,
+}) {
   const sinDatos = tarjetas.length === 0;
 
   let resumen = "Citas confirmadas de hoy";
@@ -122,7 +140,7 @@ export default function AgendaAlertsPanel({ tarjetas, restantesHoy, cargando, er
       ) : (
         <ul className="grid gap-3 sm:grid-cols-3 2xl:grid-cols-1">
           {tarjetas.map((t) => (
-            <TarjetaCita key={t.id} t={t} />
+            <TarjetaCita key={t.id} t={t} notificacionesHabilitadas={notificacionesHabilitadas} />
           ))}
         </ul>
       )}

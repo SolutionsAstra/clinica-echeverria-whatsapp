@@ -5,20 +5,39 @@
 
 export const RUTA_LOGIN = "/admin/login.html";
 
+/**
+ * fetch con sesión. Separa los tres tipos de fallo para que la interfaz no los confunda:
+ *   - Sin respuesta (red caída, servidor apagado): err.status === undefined, err.code "SIN_CONEXION".
+ *   - 401: redirige al login.
+ *   - Respuesta con error (403, 409, 422…): err.status, err.code (= body.error), err.modulo.
+ * Un 403 MODULO_PREMIUM es una respuesta válida del servidor, nunca una caída de red.
+ */
 export async function pedir(url, opciones = {}) {
-  const res = await fetch(url, {
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    ...opciones,
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      ...opciones,
+    });
+  } catch (err) {
+    if (err?.name === "AbortError") throw err; // cancelada por useSondeo: no es un fallo
+    throw Object.assign(new Error("No hay conexión con el servidor."), { code: "SIN_CONEXION", status: undefined, cause: err });
+  }
+
   if (res.status === 401) {
     window.location.href = RUTA_LOGIN;
-    throw Object.assign(new Error("No autenticado"), { code: "UNAUTHENTICATED" });
+    throw Object.assign(new Error("No autenticado"), { code: "UNAUTHENTICATED", status: 401 });
   }
+
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    // `code` es lo que lee leerCodigoError() en BandejaDerivaciones.jsx
-    throw Object.assign(new Error(data.mensaje || `HTTP ${res.status}`), { code: data.error ?? "DEFAULT", status: res.status });
+    // `code` es lo que leen BandejaDerivaciones (leerCodigoError) y esBloqueoPremium().
+    throw Object.assign(new Error(data.mensaje || `HTTP ${res.status}`), {
+      code: data.error ?? "DEFAULT",
+      status: res.status,
+      modulo: data.modulo ?? null,
+    });
   }
   return data;
 }

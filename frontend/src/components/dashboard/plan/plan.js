@@ -17,8 +17,8 @@ export const MODULO = Object.freeze({
 
 /** Textos comerciales acordados con Soluciones Astra: no reescribir sin su visto bueno. */
 export const MENSAJES = Object.freeze({
-  [MODULO.REPORTES]:
-    "Módulo Premium Activo en Plan Corporativo. Consulte a Soluciones Astra para habilitar la analítica avanzada de ausentismo (No-show).",
+    [MODULO.REPORTES]:
+    "Módulo Premium Activo en Plan Corporativo. Consulte a Soluciones Astra para habilitar la analítica avanzada de ausentismo (Pacientes Inasistentes).",
   [MODULO.MULTI_CALENDARIO]: "Función Multi-Calendario Unificado disponible contactando a Soluciones Astra.",
   [MODULO.NOTIFICACIONES]: "Requiere la activación del Módulo de Notificaciones Avanzadas de Astra.",
   LIMITE_OPERADORES:
@@ -67,4 +67,11 @@ export function cupoOperadores(plan) {
     lleno: o.activos >= o.maximo,
     excedente: Math.max(0, o.activos - o.maximo),
   };
+}
+/**
+ * El servidor respondió "módulo no contratado" (403 MODULO_PREMIUM). Es un estado comercial,
+ * no un error de carga: la vista debe mostrar el bloqueo, no "No se pudo cargar esta sección".
+ */
+export function esBloqueoPremium(err) {
+  return err?.status === 403 && err?.code === "MODULO_PREMIUM";
 }

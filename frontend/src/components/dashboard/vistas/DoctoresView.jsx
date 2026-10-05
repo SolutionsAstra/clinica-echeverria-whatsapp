@@ -11,18 +11,19 @@
  * horario laboral en orden de llegada. La vista unificada pertenece al módulo Multi-Calendario.
  */
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Inbox, Layers, Lock } from "lucide-react";
+import { ChevronLeft, ChevronRight, Inbox, Layers, Lock, Plus } from "lucide-react";
 import { actualizarHorario, textoDeError } from "../../../api/panel";
 import CalendarioDoctor from "../calendario/CalendarioDoctor";
 import { derivacionesEnEspera, lunesDe, sumarDias } from "../calendario/semana";
-import { MENSAJES, MODULO, estadoModulo } from "../plan/plan";
+import { MENSAJES, MODULO, esBloqueoPremium, estadoModulo } from "../plan/plan";
 import { diaEnZona } from "../workspace/agenda";
 import { especialidad } from "../workspace/especialidades";
 import { FOCO } from "../workspace/tokens";
 import { BOTON_FANTASMA, BOTON_PRIMARIO, BOTON_SECUNDARIO, CAMPO, ETIQUETA, SUPERFICIE } from "../ui/estilos";
-import { fechaHora } from "../ui/formato";
+import { fechaHora, fechaLarga } from "../ui/formato";
 import { DialogoPremium, EnlaceAstra } from "../ui/Premium";
 import { CargaVista, ContenedorVista, EncabezadoVista, ErrorVista, Resultado } from "../ui/Vista";
+import DialogoCitaManual from "../workspace/DialogoCitaManual";
 
 const DIAS = [
   [1, "Lun"],
@@ -234,7 +235,11 @@ export default function DoctoresView({ doctores, citas, derivaciones, plan, ahor
   const [lunes, setLunes] = useState(() => lunesDe(diaEnZona(ahora)));
   const [unificada, setUnificada] = useState(false);
   const [aviso, setAviso] = useState(false);
-
+  const [citaManual, setCitaManual] = useState({ abierto: false, apertura: 0 });
+  const [resultadoCita, setResultadoCita] = useState(null);
+  const puedeAgendar = rol === "recepcion" || rol === "direccion";
+  const notificaciones = estadoModulo(plan.datos, MODULO.NOTIFICACIONES, ahora);
+  const bandejaBloqueada = esBloqueoPremium(derivaciones.error);
   const multi = estadoModulo(plan.datos, MODULO.MULTI_CALENDARIO, ahora);
   const lista = useMemo(() => {
     const todos = doctores.datos ?? [];
@@ -253,7 +258,20 @@ export default function DoctoresView({ doctores, citas, derivaciones, plan, ahor
     if (!multi.habilitado) setAviso(true);
     else setUnificada((v) => !v);
   };
+  const abrirCitaManual = () => setCitaManual((c) => ({ abierto: true, apertura: c.apertura + 1 }));
+  const cerrarCitaManual = () => setCitaManual((c) => ({ ...c, abierto: false }));
 
+  /** Tras agendar: muestra la semana y el doctor de la cita nueva y recarga la agenda. */
+  const citaAgendada = (cita) => {
+    cerrarCitaManual();
+    setElegido(cita.doctorId);
+    setLunes(lunesDe(diaEnZona(Date.parse(cita.start))));
+    setResultadoCita({
+      tipo: "ok",
+      texto: `Cita agendada: ${cita.paciente}, ${fechaLarga(cita.start)}, con ${cita.doctorName}. La confirmación sale por WhatsApp en este momento.`,
+    });
+    citas.recargar();
+  };
   return (
     <ContenedorVista>
       <EncabezadoVista
@@ -265,13 +283,19 @@ export default function DoctoresView({ doctores, citas, derivaciones, plan, ahor
             : "Un doctor a la vez: revisa su semana y procesa en orden de llegada lo que el agente IA recibió fuera de horario."
         }
       >
-        {!esDoctor && <InterruptorUnificado activo={vistaUnificada} habilitado={multi.habilitado} onCambiar={alternarUnificada} />}
+                {!esDoctor && <InterruptorUnificado activo={vistaUnificada} habilitado={multi.habilitado} onCambiar={alternarUnificada} />}
+        {puedeAgendar && (
+          <button type="button" onClick={abrirCitaManual} disabled={lista.length === 0} className={BOTON_PRIMARIO}>
+            <Plus aria-hidden className="h-4 w-4" strokeWidth={2} />
+            Agendar Cita Manual
+          </button>
+        )}
       </EncabezadoVista>
 
       {doctores.cargando && !doctores.datos ? (
         <CargaVista filas={3} />
       ) : doctores.error && !doctores.datos ? (
-        <ErrorVista onReintentar={doctores.recargar} />
+        <ErrorVista error={doctores.error} onReintentar={doctores.recargar} />
       ) : !doctor ? (
         <ErrorVista titulo="No hay doctores para mostrar." detalle="Tu cuenta no tiene un doctor asociado. Pídele a Dirección que lo revise." />
       ) : (
@@ -298,10 +322,16 @@ export default function DoctoresView({ doctores, citas, derivaciones, plan, ahor
             )}
           </div>
 
+          {resultadoCita && (
+            <div className="mt-4">
+              <Resultado resultado={resultadoCita} />
+            </div>
+          )}
+
           <div className="mt-5 grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1fr)_20rem]">
             <div className="min-w-0">
               {citas.error && !citas.datos ? (
-                <ErrorVista onReintentar={citas.recargar} />
+                <ErrorVista error={citas.error} onReintentar={citas.recargar} />
               ) : (
                 <CalendarioDoctor
                   citas={citas.datos ?? []}
@@ -310,18 +340,32 @@ export default function DoctoresView({ doctores, citas, derivaciones, plan, ahor
                   lunes={lunes}
                   ahora={ahora}
                   unificada={vistaUnificada}
+                  notificacionesHabilitadas={notificaciones.habilitado}
+                  puedeRecordar={puedeAgendar}
                 />
               )}
             </div>
 
             <div className="grid content-start gap-6 lg:grid-cols-2 2xl:grid-cols-1">
-              {!esDoctor && <EsperaAgente derivaciones={enEspera} ahora={ahora} onAbrirBandeja={onIrADerivaciones} />}
+              {!esDoctor && !bandejaBloqueada && (
+                <EsperaAgente derivaciones={enEspera} ahora={ahora} onAbrirBandeja={onIrADerivaciones} />
+              )}
               <HorarioDoctor key={doctor.id} doctor={doctor} editable={rol === "direccion"} onGuardado={doctores.recargar} />
             </div>
           </div>
         </>
       )}
-
+      {puedeAgendar && (
+        <DialogoCitaManual
+          key={citaManual.apertura}
+          abierto={citaManual.abierto}
+          onCerrar={cerrarCitaManual}
+          doctores={lista}
+          doctorInicial={doctor?.id ?? null}
+          ahora={ahora}
+          onAgendada={citaAgendada}
+        />
+      )}
       <DialogoPremium
         abierto={aviso}
         onCerrar={() => setAviso(false)}

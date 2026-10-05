@@ -34,13 +34,25 @@ export function CargaVista({ filas = 5 }) {
   );
 }
 
-export function ErrorVista({ titulo = "No se pudo cargar esta sección.", detalle, onReintentar }) {
+/**
+ * Explica el fallo según su tipo. Sin respuesta ≠ respuesta con error:
+ * un 403 nunca se presenta como "el servidor no respondió".
+ */
+function explicarError(error) {
+  const legible = error?.message && !/^HTTP \d+$/.test(error.message) ? error.message : null;
+  if (!error || error.status === undefined) {
+    return "El servidor no respondió. Revisa el indicador de conexión del menú y vuelve a intentarlo.";
+  }
+  if (error.status === 403) return legible ?? "Tu usuario no tiene acceso a esta sección.";
+  if (error.status >= 500) return "El servidor tuvo un problema al responder. Intenta de nuevo en unos segundos.";
+  return legible ?? "La solicitud no se pudo completar.";
+}
+
+export function ErrorVista({ titulo = "No se pudo cargar esta sección.", detalle, error, onReintentar }) {
   return (
     <div role="alert" className={`${SUPERFICIE} px-6 py-10`}>
       <p className="text-sm font-medium text-[#E6E9EE]">{titulo}</p>
-      <p className="mt-1 max-w-md text-sm text-[#A3AEBD]">
-        {detalle ?? "El servidor no respondió. Revisa el indicador de conexión del menú y vuelve a intentarlo."}
-      </p>
+      <p className="mt-1 max-w-md text-sm text-[#A3AEBD]">{detalle ?? explicarError(error)}</p>
       {onReintentar && (
         <button type="button" onClick={onReintentar} className={`${BOTON_SECUNDARIO} mt-5 h-8 px-3`}>
           <RotateCw aria-hidden className="h-3.5 w-3.5" strokeWidth={1.75} />

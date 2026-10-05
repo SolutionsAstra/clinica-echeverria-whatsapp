@@ -1,20 +1,20 @@
 /**
  * Bloqueos comerciales de Astra Health.
- *
- *   <PanelPremium>     pantalla de bloqueo de un módulo completo (vidrio sobre una vista previa atenuada)
- *   <DialogoPremium>   la misma idea, como diálogo modal, para una función dentro de una vista
- *   <BotonBloqueado>   acción visible pero inactiva, con el motivo en un tooltip accesible
- *
- * Son solo presentación: el servidor responde 403 MODULO_PREMIUM / LIMITE_OPERADORES aunque
- * alguien manipule la interfaz.
+ *   <PanelPremium>    pantalla de bloqueo de un módulo (vidrio esmerilado sobre una vista previa atenuada)
+ *   <DialogoPremium>  la misma idea como diálogo modal
+ *   <BotonBloqueado>  acción visible pero inactiva; el motivo aparece en un tooltip flotante
+ * Solo presentación: el servidor responde 403 aunque alguien manipule la interfaz.
  */
-import { useEffect, useId, useRef } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Lock, X } from "lucide-react";
 import { FOCO } from "../workspace/tokens";
-import { BOTON_SECUNDARIO } from "./estilos";
+import { BOTON_SECUNDARIO, TAMANO_COMPACTO } from "./estilos";
 
 /** Enlace opcional a Soluciones Astra (VITE_ASTRA_CONTACTO=mailto:… o https://…). */
 const CONTACTO_ASTRA = import.meta.env?.VITE_ASTRA_CONTACTO ?? null;
+const ANCHO_TOOLTIP = 288; // w-72
+const MARGEN = 8;
 
 export function SelloCandado({ className = "" }) {
   return (
@@ -36,14 +36,13 @@ export function EnlaceAstra() {
   );
 }
 
-/**
- * @param {{ titulo: string, mensaje: string, vistaPrevia?: React.ReactNode, children?: React.ReactNode }} props
- *   children = acciones (p. ej. "Probar Gratis por 3 días")
- */
 export function PanelPremium({ titulo, mensaje, vistaPrevia, children }) {
   const tituloId = useId();
   return (
-    <section aria-labelledby={tituloId} className="relative isolate min-h-[30rem] overflow-hidden rounded-[10px] border border-[#1A2D48]">
+    <section
+      aria-labelledby={tituloId}
+      className="relative isolate min-h-[30rem] overflow-hidden rounded-[10px] border border-[#1A2D48]"
+    >
       {/* Lo que el módulo ofrece, atenuado e inerte: muestra la forma, no datos. */}
       <div aria-hidden inert className="pointer-events-none select-none opacity-40 blur-[2px]">
         {vistaPrevia}
@@ -81,7 +80,7 @@ export function DialogoPremium({ abierto, onCerrar, titulo, mensaje, children })
       aria-labelledby={tituloId}
       onClose={onCerrar}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onCerrar(); // clic en el fondo
+        if (e.target === e.currentTarget) onCerrar();
       }}
       className="w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-[#243B5A] bg-[#0E1F36]/90 p-0 text-[#E6E9EE] shadow-[0_24px_60px_-24px_rgba(0,0,0,0.7)] backdrop:bg-[#060E1A]/70 backdrop:backdrop-blur-sm"
     >
@@ -111,31 +110,96 @@ export function DialogoPremium({ abierto, onCerrar, titulo, mensaje, children })
 }
 
 /**
- * Botón visible pero inactivo. Usa aria-disabled (no `disabled`) para que siga siendo enfocable:
- * así el motivo aparece también al llegar con el teclado, y no solo con el cursor.
+ * Tooltip montado en document.body con position: fixed. No lo recortan los paneles con scroll
+ * ni las tarjetas de vidrio (backdrop-filter crea un bloque contenedor para `fixed`).
  */
-export function BotonBloqueado({ etiqueta, motivo, Icono, className = "" }) {
-  const tooltipId = useId();
+function TooltipFlotante({ posicion, children }) {
+  if (!posicion) return null;
+  return createPortal(
+    <div
+      aria-hidden
+      className="pointer-events-none fixed z-[60] w-72 rounded-md border border-[#243B5A] bg-[#0E1F36] px-3 py-2.5 text-xs leading-relaxed text-[#E6E9EE] shadow-[0_12px_32px_-12px_rgba(0,0,0,0.7)]"
+      style={{
+        top: posicion.top,
+        left: posicion.left,
+        transform: posicion.arriba ? "translateY(-100%)" : undefined,
+      }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+const TAMANO_ICONO = { normal: "h-4 w-4", compacto: "h-3.5 w-3.5", icono: "h-3.5 w-3.5", mini: "h-3 w-3" };
+
+/**
+ * Botón visible pero inactivo. Usa aria-disabled (no `disabled`) para seguir siendo enfocable:
+ * el motivo aparece con el cursor, con el teclado y al tocarlo.
+ * variante: "normal" (barra de acciones) | "compacto" (tarjeta) | "icono" (fila) | "mini" (calendario)
+ */
+export function BotonBloqueado({ etiqueta, motivo, Icono, variante = "normal", className = "" }) {
+  const motivoId = useId();
+  const boton = useRef(null);
+  const [posicion, setPosicion] = useState(null);
+  const conTexto = variante === "normal" || variante === "compacto";
+  const tamanoIcono = TAMANO_ICONO[variante] ?? TAMANO_ICONO.normal;
+
+  const mostrar = useCallback(() => {
+    const r = boton.current?.getBoundingClientRect();
+    if (!r) return;
+    const arriba = window.innerHeight - r.bottom < 96;
+    setPosicion({
+      top: arriba ? r.top - MARGEN : r.bottom + MARGEN,
+      left: Math.max(MARGEN, Math.min(r.right - ANCHO_TOOLTIP, window.innerWidth - ANCHO_TOOLTIP - MARGEN)),
+      arriba,
+    });
+  }, []);
+  const ocultar = useCallback(() => setPosicion(null), []);
+
+  useEffect(() => {
+    if (!posicion) return undefined;
+    const alTecla = (e) => {
+      if (e.key === "Escape") ocultar();
+    };
+    window.addEventListener("scroll", ocultar, true);
+    window.addEventListener("resize", ocultar);
+    window.addEventListener("keydown", alTecla);
+    return () => {
+      window.removeEventListener("scroll", ocultar, true);
+      window.removeEventListener("resize", ocultar);
+      window.removeEventListener("keydown", alTecla);
+    };
+  }, [posicion, ocultar]);
+
   return (
-    <span className={`group relative inline-flex ${className}`}>
+    <span className={`inline-flex ${className}`} onMouseEnter={mostrar} onMouseLeave={ocultar}>
       <button
+        ref={boton}
         type="button"
         aria-disabled="true"
-        aria-describedby={tooltipId}
-        onClick={(e) => e.preventDefault()}
-        className={`inline-flex h-9 cursor-not-allowed items-center gap-2 whitespace-nowrap rounded-md border border-dashed border-[#2A4266] px-4 text-sm text-[#8A97A8] transition-colors duration-200 hover:border-[#3A4F6E] ${FOCO}`}
+        aria-label={conTexto ? undefined : etiqueta}
+        aria-describedby={motivoId}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          mostrar();
+        }}
+        onFocus={mostrar}
+        onBlur={ocultar}
+        className={`inline-flex cursor-not-allowed items-center rounded-md border border-dashed border-[#2A4266] bg-[#0B192C]/40 text-[#8A97A8] transition-colors duration-200 hover:border-[#3A4F6E] hover:text-[#A3AEBD] ${TAMANO_COMPACTO[variante] ?? TAMANO_COMPACTO.normal} ${FOCO}`}
       >
-        {Icono && <Icono aria-hidden className="h-4 w-4" strokeWidth={1.5} />}
-        {etiqueta}
-        <Lock aria-hidden className="h-3.5 w-3.5 text-[#A3AEBD]" strokeWidth={1.75} />
+        {Icono && <Icono aria-hidden className={`${tamanoIcono} shrink-0`} strokeWidth={1.5} />}
+        {conTexto && <span className={variante === "compacto" ? "min-w-0 flex-1" : ""}>{etiqueta}</span>}
+        <Lock aria-hidden className={`${tamanoIcono} shrink-0 text-[#A3AEBD]`} strokeWidth={1.75} />
       </button>
-      <span
-        role="tooltip"
-        id={tooltipId}
-        className="pointer-events-none invisible absolute right-0 top-full z-40 mt-2 w-72 rounded-md border border-[#243B5A] bg-[#0E1F36] px-3 py-2.5 text-xs leading-relaxed text-[#E6E9EE] opacity-0 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.7)] transition-opacity duration-150 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 motion-reduce:transition-none"
-      >
+      <span id={motivoId} className="sr-only">
         {motivo}
       </span>
+      <TooltipFlotante posicion={posicion}>
+        {!conTexto && <span className="mb-1 block font-medium text-[#F2F4F7]">{etiqueta}</span>}
+        {motivo}
+      </TooltipFlotante>
     </span>
   );
 }

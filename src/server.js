@@ -11,7 +11,7 @@ const wa = require('./whatsapp');
 const { createVetModule, requireApiKey } = require('./modules/vet');
 const { createDerivacionesModule } = require('./modules/derivaciones');
 const { createPlanModule } = require('./modules/plan');
-
+const { citaManualRouter } = require('./routes/citaManual.routes');
 const dbSchema = process.env.DB_SCHEMA || 'public';
 
 // Una sola instancia del middleware de API key: valida la clave una vez al arrancar.
@@ -76,7 +76,15 @@ app.use('/api/derivaciones', requireLogin, derivacionesModule.router);
 
 // Estado del plan para pintar candados en el panel; POST /pruebas activa la prueba de 3 días.
 app.use('/api/plan', requireLogin, planModule.router);
-
+// Cita manual desde el calendario del panel: mismo motor de reservas del asistente, sin x-api-key
+// en el navegador, y confirmación por WhatsApp en caliente.
+app.use(
+  '/api/citas/manual',
+  requireLogin,
+  requireRole('recepcion', 'direccion'),
+  citaManualRouter({ scheduler: vetModule.scheduler, notifier: wa })
+);
+app.use('/api', requireLogin, adminApiRoutes);
 // Servicios para el Asistente de WhatsApp: API key, sin sesión.
 // Deben ir ANTES de app.use('/api', requireLogin, ...) o requireLogin respondería 401.
 app.use('/api/ia/derivaciones', iaApiKey, derivacionesModule.iaRouter);
@@ -85,7 +93,7 @@ app.use('/api/vet', iaApiKey, vetModule.router);
 // Panel estático (sin datos sensibles; la seguridad está en /api/*)
 app.use('/admin', express.static(path.join(__dirname, '..', 'public', 'admin')));
 
-app.use('/api', requireLogin, adminApiRoutes);
+
 
 // Manejador de errores central — evita que un error de SQL tumbe el proceso
 app.use((err, req, res, next) => {

@@ -22,7 +22,7 @@ import { cerrarSesion, listarCitas, listarDoctores, obtenerPlan } from "../../ap
 import { useAhora } from "../../hooks/useAhora";
 import { useEstadoRed } from "../../hooks/useEstadoRed";
 import { useSondeo } from "../../hooks/useSondeo";
-import { MODULO, estadoModulo } from "./plan/plan";
+import { MODULO, esBloqueoPremium, estadoModulo } from "./plan/plan";
 import ControlSidebar from "./workspace/ControlSidebar";
 import MedicalNetworkBackground from "./workspace/MedicalNetworkBackground";
 import { FUENTE } from "./workspace/tokens";
@@ -115,14 +115,16 @@ export default function AdminDashboard({ usuarioInicial, onSesionCerrada }) {
     () =>
       SECCIONES.filter((s) => s.roles.includes(rol)).map((s) => {
         const e = s.modulo ? estadoModulo(plan.datos, s.modulo, ahora) : null;
+                // Un 403 MODULO_PREMIUM de la bandeja también es un candado, aunque el plan aún no lo liste.
+        const bandejaBloqueada = s.id === "derivaciones" && esBloqueoPremium(derivaciones.error);
         return {
           id: s.id,
           etiqueta: s.etiqueta,
-          bloqueada: Boolean(e?.conocido && !e.habilitado),
-          cuenta: s.id === "derivaciones" ? (derivaciones.datos?.length ?? null) : null,
+          bloqueada: Boolean(e?.conocido && !e.habilitado) || bandejaBloqueada,
+          cuenta: s.id === "derivaciones" && !bandejaBloqueada ? (derivaciones.datos?.length ?? null) : null,
         };
       }),
-    [rol, plan.datos, ahora, derivaciones.datos],
+    [rol, plan.datos, ahora, derivaciones.datos, derivaciones.error],
   );
   const vistaActiva = secciones.some((s) => s.id === vista) ? vista : (secciones[0]?.id ?? "resumen");
 
@@ -150,10 +152,19 @@ export default function AdminDashboard({ usuarioInicial, onSesionCerrada }) {
     else window.location.assign(RUTA_LOGIN);
   }, [onSesionCerrada]);
 
-  let contenido = null;
+  let contenido;
   switch (vistaActiva) {
     case "derivaciones":
-      contenido = <DerivacionesView derivaciones={derivaciones} citas={citas} ahora={ahora} onReservar={reservar} />;
+            contenido = (
+        <DerivacionesView
+          derivaciones={derivaciones}
+          citas={citas}
+          plan={plan}
+          ahora={ahora}
+          rol={rol}
+          onReservar={reservar}
+        />
+      );
       break;
     case "citas":
       contenido = <CitasView citas={citas} plan={plan} ahora={ahora} rol={rol} />;

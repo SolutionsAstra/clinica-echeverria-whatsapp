@@ -1,4 +1,5 @@
 import { RotateCw } from "lucide-react";
+import { textoDeError } from "../../../api/panel";
 import BandejaDerivaciones from "../BandejaDerivaciones";
 import { ZONA_CLINICA } from "./agenda";
 import { FOCO, LINEA, VIDRIO } from "./tokens";
@@ -9,6 +10,12 @@ const fmtHora = new Intl.DateTimeFormat("es-VE", {
   minute: "2-digit",
   hourCycle: "h23",
 });
+
+const SIN_RESPUESTA = "El servidor no respondió. Revisa el indicador de conexión del menú y vuelve a intentarlo.";
+
+/** Sin respuesta ≠ respuesta con error: un 403 o un 500 nunca se describen como caída de red. */
+const explicar = (error) =>
+  error?.status === undefined ? SIN_RESPUESTA : textoDeError(error, "El servidor rechazó la solicitud. Intenta de nuevo.");
 
 function BotonReintentar({ onClick }) {
   return (
@@ -25,9 +32,10 @@ function BotonReintentar({ onClick }) {
 
 /**
  * Estados alrededor de <BandejaDerivaciones embebida />:
- * - primera carga: esqueleto (la bandeja mostraría "No hay derivaciones" mientras tanto)
- * - error sin datos: mensaje + reintentar
+ * - primera carga: esqueleto
+ * - error sin datos: mensaje según el tipo de fallo + reintentar
  * - error con datos: la bandeja sigue usable y se avisa que la lista puede estar desactualizada
+ * (El 403 MODULO_PREMIUM lo intercepta DerivacionesView antes de llegar aquí.)
  */
 export default function DerivacionesColumn({ solicitudes, cargando, error, actualizadoEn, onReintentar, onReservar }) {
   if (cargando && !solicitudes) {
@@ -43,12 +51,14 @@ export default function DerivacionesColumn({ solicitudes, cargando, error, actua
   if (error && !solicitudes) {
     return (
       <div className="px-5 py-8 lg:px-8 lg:py-10">
-        <h1 className="text-2xl font-semibold tracking-tight text-[#F2F4F7]">Derivaciones de la IA</h1>
+        <h1 id="titulo-vista" tabIndex={-1} className="text-2xl font-semibold tracking-tight text-[#F2F4F7] outline-none">
+          Derivaciones del agente IA
+        </h1>
         <div role="alert" className={`mt-10 rounded-lg px-6 py-10 ${VIDRIO} ${LINEA}`}>
-          <p className="text-sm font-medium text-[#E6E9EE]">No se pudo cargar la bandeja.</p>
-          <p className="mt-1 max-w-md text-sm text-[#A3AEBD]">
-            El servidor no respondió. Revisa el indicador de conexión de la izquierda y vuelve a intentarlo.
+          <p className="text-sm font-medium text-[#E6E9EE]">
+            {error.status === undefined ? "No se pudo cargar la bandeja." : "La bandeja no está disponible."}
           </p>
+          <p className="mt-1 max-w-md text-sm text-[#A3AEBD]">{explicar(error)}</p>
           <div className="mt-5">
             <BotonReintentar onClick={onReintentar} />
           </div>

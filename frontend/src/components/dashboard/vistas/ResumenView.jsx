@@ -51,13 +51,16 @@ export default function ResumenView({ rol, citas, ahora }) {
       {metricas.cargando && !m ? (
         <CargaVista filas={2} />
       ) : metricas.error && !m ? (
-        <ErrorVista onReintentar={metricas.recargar} />
+        <ErrorVista error={metricas.error} onReintentar={metricas.recargar} />
       ) : (
         <dl className={`${SUPERFICIE} grid grid-cols-1 divide-y divide-[#1A2D48] sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 lg:divide-x`}>
           <Cifra etiqueta={esDoctor ? "Citas en tu agenda" : "Citas registradas"} valor={m.total_citas} />
           <Cifra etiqueta="Confirmadas activas" valor={m.confirmadas} />
-          <Cifra etiqueta="Inasistencia (no-show)" valor={`${m.tasa_no_show}%`} nota={`${m.no_show} de ${m.total_citas} citas`} />
-          {m.conversaciones_escaladas != null && (
+          <Cifra
+            etiqueta="Tasa de Ausentismo"
+            valor={`${m.tasa_no_show}%`}
+            nota={`${m.no_show} ${m.no_show === 1 ? "paciente inasistente" : "pacientes inasistentes"} de ${m.total_citas} citas`}
+          />          {m.conversaciones_escaladas != null && (
             <Cifra etiqueta="Escaladas a un asesor" valor={m.conversaciones_escaladas} />
           )}
         </dl>

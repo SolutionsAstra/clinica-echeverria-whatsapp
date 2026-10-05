@@ -5,20 +5,19 @@
  * El contrato vive en la tabla `plan_clinica` (sql/migrations/20261004_plan_licencias.sql):
  * Soluciones Astra lo cambia con un UPDATE; el código no trae licencias "quemadas".
  */
-
-export const MODULOS = ["reportes", "multi_calendario", "notificaciones_avanzadas"] as const;
+export const MODULOS = ['reportes', 'usuarios', 'notificaciones_avanzadas', 'derivaciones_ia'];
+export const MODULOS_CON_PRUEBA = ['reportes', 'derivaciones_ia'];
 export type Modulo = (typeof MODULOS)[number];
 
 export const DIAS_PRUEBA = 3;
 const DIA_MS = 86_400_000;
 
 /** Solo estos módulos ofrecen "Probar gratis por 3 días". */
-const MODULOS_CON_PRUEBA: ReadonlySet<Modulo> = new Set<Modulo>(["reportes"]);
 
 /** Textos acordados con Soluciones Astra (mismos que frontend/src/components/dashboard/plan/plan.js). */
 export const MENSAJE_MODULO: Record<Modulo, string> = {
   reportes:
-    "Módulo Premium Activo en Plan Corporativo. Consulte a Soluciones Astra para habilitar la analítica avanzada de ausentismo (No-show).",
+    "Módulo Premium Activo en Plan Corporativo. Consulte a Soluciones Astra para habilitar la analítica avanzada de ausentismo (Pacientes Inasistentes).",
   multi_calendario: "Función Multi-Calendario Unificado disponible contactando a Soluciones Astra.",
   notificaciones_avanzadas: "Requiere la activación del Módulo de Notificaciones Avanzadas de Astra.",
 };

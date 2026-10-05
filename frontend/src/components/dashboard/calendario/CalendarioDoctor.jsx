@@ -14,6 +14,7 @@ import { FOCO } from "../workspace/tokens";
 import { ORDEN_ESPECIALIDADES, especialidad } from "../workspace/especialidades";
 import { diaEnZona } from "../workspace/agenda";
 import { maquetarSemana, partesEnZona, resumenPorEspecialidad } from "./semana";
+import BotonRecordatorio from "../workspace/BotonRecordatorio";
 
 const PX_POR_MIN = 1.2; // 72 px por hora: una cita de 30 min deja dos líneas legibles
 const ANCHO_COLUMNA = "8.5rem";
@@ -62,15 +63,23 @@ function Leyenda({ resumen, ocultas, onAlternar }) {
   );
 }
 
-function Bloque({ b, inicioMin, unificada }) {
+/**
+ * Bloque de cita. Las citas confirmadas y futuras de 30 min o más llevan el recordatorio en
+ * versión "mini"; en 15 min no cabe sin tapar el nombre del paciente.
+ * recordatorio: null (no se muestra) | boolean (módulo de notificaciones habilitado)
+ */
+function Bloque({ b, inicioMin, unificada, ahora, recordatorio }) {
   const esp = especialidad(b.especialidad);
   const alto = Math.max(22, (b.finMin - b.inicioMin) * PX_POR_MIN - 2);
-  const noShow = b.estado === "no_show";
+  const inasistente = b.estado === "no_show";
+  const conRecordatorio =
+    recordatorio != null && b.estado === "confirmada" && alto >= 34 && Date.parse(b.inicioIso) > ahora;
+
   return (
     <li
       className={`absolute overflow-hidden rounded-[4px] border border-l-2 px-2 py-1 text-[11px] leading-tight text-[#E6E9EE] ${
-        noShow ? "opacity-55" : ""
-      }`}
+        inasistente ? "opacity-55" : ""
+      } ${conRecordatorio ? "pr-10" : ""}`}
       style={{
         top: (b.inicioMin - inicioMin) * PX_POR_MIN + 1,
         height: alto,
@@ -80,15 +89,26 @@ function Bloque({ b, inicioMin, unificada }) {
         borderColor: conAlfa(esp.color, 0.4),
         borderLeftColor: esp.color,
       }}
-      title={`${hhmm(b.inicioMin)}–${hhmm(b.finMin)} ${b.paciente} (${esp.nombre})`}
     >
       <p className="tabular-nums text-[#C7CCD3]">
         {hhmm(b.inicioMin)}
-        <span className="sr-only"> a {hhmm(b.finMin)}, {esp.nombre}</span>
-        {noShow && <span className="ml-1.5 text-[#E8A9A9]">No-show</span>}
+        <span className="sr-only">
+          {" "}
+          a {hhmm(b.finMin)}, {esp.nombre}
+        </span>
+        {inasistente && <span className="ml-1.5 text-[#E8A9A9]">Inasistente</span>}
       </p>
-      <p className={`truncate font-medium ${noShow ? "line-through" : ""}`}>{b.paciente}</p>
+      <p className={`truncate font-medium ${inasistente ? "line-through" : ""}`}>{b.paciente}</p>
       {unificada && alto > 44 && <p className="truncate text-[#A3AEBD]">{b.doctor}</p>}
+      {conRecordatorio && (
+        <BotonRecordatorio
+          citaId={b.id}
+          paciente={b.paciente}
+          habilitado={recordatorio}
+          variante="mini"
+          className="absolute right-1 top-1"
+        />
+      )}
     </li>
   );
 }
@@ -97,7 +117,16 @@ function Bloque({ b, inicioMin, unificada }) {
  * @param {{ citas: object[], doctorId: number|null, horario?: object, lunes: string, ahora: number, unificada?: boolean }} props
  *   doctorId null + unificada = Multi-Calendario (solo con el módulo activo).
  */
-export default function CalendarioDoctor({ citas, doctorId, horario, lunes, ahora, unificada = false }) {
+export default function CalendarioDoctor({
+  citas,
+  doctorId,
+  horario,
+  lunes,
+  ahora,
+  unificada = false,
+  notificacionesHabilitadas = false,
+  puedeRecordar = false,
+}) {
   const [ocultas, setOcultas] = useState(() => new Set());
 
   const m = useMemo(
@@ -184,7 +213,14 @@ export default function CalendarioDoctor({ citas, doctorId, horario, lunes, ahor
 
               <ol aria-label={`${fmtDiaLargo.format(aFecha(c.dia))}: ${c.bloques.length} citas`} className="absolute inset-0">
                 {c.bloques.map((b) => (
-                  <Bloque key={b.id} b={b} inicioMin={m.inicioMin} unificada={unificada} />
+                                    <Bloque
+                    key={b.id}
+                    b={b}
+                    inicioMin={m.inicioMin}
+                    unificada={unificada}
+                    ahora={ahora}
+                    recordatorio={puedeRecordar ? notificacionesHabilitadas : null}
+                  />
                 ))}
               </ol>
             </div>

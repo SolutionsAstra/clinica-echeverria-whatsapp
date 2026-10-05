@@ -1,23 +1,21 @@
 /**
  * Reportes — módulo premium.
- *   Bloqueado  → <PanelPremium> sobre una vista previa atenuada (forma del módulo, sin datos).
+ *   Bloqueado según el plan, o por un 403 MODULO_PREMIUM del servidor → <BloqueoPremium>.
  *   En prueba  → aviso con los días restantes + el módulo completo.
  *   Contratado → el módulo completo.
- * El historial de envíos solo se pide con el módulo activo: así no hay 403 en la consola.
+ * Un 403 MODULO_PREMIUM es una respuesta comercial, no un fallo de carga: nunca termina en
+ * "No se pudo cargar esta sección". Si /api/plan no responde, decide /api/reportes.
  */
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Clock, Loader2 } from "lucide-react";
-import { generarReporteAhora, iniciarPrueba, listarReportes, textoDeError } from "../../../api/panel";
+import { generarReporteAhora, listarReportes, textoDeError } from "../../../api/panel";
 import { useSondeo } from "../../../hooks/useSondeo";
-import { MENSAJES, MODULO, estadoModulo } from "../plan/plan";
+import { MENSAJES, MODULO, esBloqueoPremium, estadoModulo } from "../plan/plan";
 import { ausentismoPorDoctor } from "../reportes/ausentismo";
-import { BOTON_PRIMARIO, BOTON_SECUNDARIO, FILA, SUPERFICIE, TABLA, TD, TH } from "../ui/estilos";
+import { BOTON_SECUNDARIO, FILA, SUPERFICIE, TABLA, TD, TH } from "../ui/estilos";
 import { fechaHora, fechaLarga } from "../ui/formato";
-import { EnlaceAstra, PanelPremium } from "../ui/Premium";
 import { CargaVista, ContenedorVista, EncabezadoVista, ErrorVista, Resultado, VacioVista } from "../ui/Vista";
-
-const ETIQUETA_PRUEBA = "Probar Gratis por 3 días";
-const cargarReportes = (signal) => listarReportes({ signal });
+import BloqueoPremium from "../workspace/BloqueoPremium";
 
 /** Silueta del módulo para el fondo del bloqueo: barras y filas sin cifras reales. */
 function VistaPrevia() {
@@ -48,45 +46,19 @@ function VistaPrevia() {
   );
 }
 
-function ActivarPrueba({ diasPrueba, onActivada }) {
-  const [fase, setFase] = useState("inactivo"); // inactivo | confirmar | activando
-  const [error, setError] = useState(null);
-
-  const activar = async () => {
-    setFase("activando");
-    setError(null);
-    try {
-      await iniciarPrueba(MODULO.REPORTES);
-      onActivada();
-    } catch (err) {
-      setError(textoDeError(err));
-      setFase("confirmar");
-    }
-  };
-
-  if (fase === "inactivo") {
-    return (
-      <button type="button" onClick={() => setFase("confirmar")} className={BOTON_PRIMARIO}>
-        {ETIQUETA_PRUEBA}
-      </button>
-    );
-  }
+function BloqueoReportes({ plan, ahora, rol, onActivada }) {
+  const e = estadoModulo(plan.datos, MODULO.REPORTES, ahora);
   return (
-    <div className="w-full space-y-4">
-      <p className="text-sm text-[#A3AEBD]">
-        La prueba dura {diasPrueba} días desde ahora y solo puede usarse una vez. Al terminar, el módulo vuelve a bloquearse.
-      </p>
-      <div className="flex flex-wrap gap-3">
-        <button type="button" onClick={activar} disabled={fase === "activando"} className={BOTON_PRIMARIO}>
-          {fase === "activando" && <Loader2 aria-hidden className="h-4 w-4 animate-spin motion-reduce:animate-none" />}
-          {fase === "activando" ? "Activando…" : "Activar prueba ahora"}
-        </button>
-        <button type="button" onClick={() => setFase("inactivo")} disabled={fase === "activando"} className={BOTON_SECUNDARIO}>
-          Ahora no
-        </button>
-      </div>
-      {error && <Resultado resultado={{ tipo: "error", texto: error }} />}
-    </div>
+    <BloqueoPremium
+      titulo="Analítica avanzada de ausentismo"
+      mensaje={MENSAJES[MODULO.REPORTES]}
+      modulo={MODULO.REPORTES}
+      rol={rol}
+      pruebaDisponible={e.conocido ? e.pruebaDisponible : null}
+      diasPrueba={plan.datos?.diasPrueba ?? 3}
+      vistaPrevia={<VistaPrevia />}
+      onActivada={onActivada}
+    />
   );
 }
 
@@ -95,21 +67,26 @@ function Ausentismo({ citas, ahora }) {
   return (
     <section aria-labelledby="ausentismo-titulo" className={`${SUPERFICIE} p-6`}>
       <h2 id="ausentismo-titulo" className="text-base font-semibold text-[#E6E9EE]">
-        Ausentismo por doctor
+        Tasa de Ausentismo por doctor
       </h2>
-      <p className="mt-1 text-sm text-[#A3AEBD]">Porcentaje de citas ya ocurridas en las que el paciente no se presentó.</p>
+      <p className="mt-1 text-sm text-[#A3AEBD]">
+        Porcentaje de citas ya ocurridas en las que el paciente no se presentó.
+      </p>
       {filas.length === 0 ? (
         <VacioVista titulo="Aún no hay citas ocurridas para medir." />
       ) : (
         <ul className="mt-6 space-y-4">
           {filas.map((f) => (
-            <li key={f.doctorId} className="grid grid-cols-[12rem_minmax(0,1fr)_7rem] items-center gap-4">
+            <li key={f.doctorId} className="grid grid-cols-[12rem_minmax(0,1fr)_11rem] items-center gap-4">
               <span className="truncate text-sm text-[#E6E9EE]">{f.doctor}</span>
               <span aria-hidden className="h-1.5 rounded-full bg-[#1A2D48]">
                 <span className="block h-full rounded-full bg-[#C9AE72]" style={{ width: `${f.tasa}%` }} />
               </span>
               <span className="text-right text-sm tabular-nums text-[#C7CCD3]">
-                {f.tasa}% <span className="text-[#7D8BA0]">({f.noShow}/{f.ocurridas})</span>
+                {f.tasa}%{" "}
+                <span className="text-[#7D8BA0]">
+                  ({f.noShow} de {f.ocurridas} {f.noShow === 1 ? "inasistente" : "inasistentes"})
+                </span>
               </span>
             </li>
           ))}
@@ -119,8 +96,7 @@ function Ausentismo({ citas, ahora }) {
   );
 }
 
-function HistorialEnvios() {
-  const reportes = useSondeo(cargarReportes);
+function HistorialEnvios({ reportes }) {
   const [generando, setGenerando] = useState(false);
   const [resultado, setResultado] = useState(null);
 
@@ -152,40 +128,73 @@ function HistorialEnvios() {
           </button>
         </div>
       </div>
-      {reportes.cargando && !reportes.datos ? (
-        <CargaVista filas={3} />
-      ) : reportes.error && !reportes.datos ? (
-        <ErrorVista detalle={textoDeError(reportes.error)} onReintentar={reportes.recargar} />
-      ) : (
-        <div className={`${SUPERFICIE} overflow-x-auto`}>
-          <table className={TABLA}>
-            <thead>
-              <tr>
-                <th scope="col" className={TH}>Doctor</th>
-                <th scope="col" className={TH}>Generado</th>
-                <th scope="col" className={TH}>Envío</th>
+      <div className={`${SUPERFICIE} overflow-x-auto`}>
+        <table className={TABLA}>
+          <thead>
+            <tr>
+              <th scope="col" className={TH}>Doctor</th>
+              <th scope="col" className={TH}>Generado</th>
+              <th scope="col" className={TH}>Envío</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reportes.datos.map((r) => (
+              <tr key={r.id} className={FILA}>
+                <td className={TD}>{r.doctor_nombre}</td>
+                <td className={`${TD} capitalize tabular-nums text-[#C7CCD3]`}>{fechaHora(r.fecha_generacion)}</td>
+                <td className={TD}>
+                  {r.estado_envio === "enviado" ? (
+                    <span className="text-[#86D5BC]">Enviado</span>
+                  ) : (
+                    <span className="text-[#E8A9A9]">Fallido</span>
+                  )}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {reportes.datos.map((r) => (
-                <tr key={r.id} className={FILA}>
-                  <td className={TD}>{r.doctor_nombre}</td>
-                  <td className={`${TD} capitalize tabular-nums text-[#C7CCD3]`}>{fechaHora(r.fecha_generacion)}</td>
-                  <td className={TD}>
-                    {r.estado_envio === "enviado" ? (
-                      <span className="text-[#86D5BC]">Enviado</span>
-                    ) : (
-                      <span className="text-[#E8A9A9]">Fallido</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {reportes.datos.length === 0 && <VacioVista titulo="Aún no se ha enviado ningún reporte." />}
-        </div>
-      )}
+            ))}
+          </tbody>
+        </table>
+        {reportes.datos.length === 0 && <VacioVista titulo="Aún no se ha enviado ningún reporte." />}
+      </div>
     </section>
+  );
+}
+
+/** Dirección con el módulo activo (o sin dato del plan): el servidor tiene la última palabra. */
+function ModuloReportes({ plan, citas, ahora, rol }) {
+  const { recargar: recargarPlan } = plan;
+  const cargar = useCallback(
+    (signal) =>
+      listarReportes({ signal }).catch((err) => {
+        if (esBloqueoPremium(err)) recargarPlan(); // el plan quedó desactualizado: refresca el candado del menú
+        throw err;
+      }),
+    [recargarPlan],
+  );
+  const reportes = useSondeo(cargar);
+
+  if (reportes.cargando && !reportes.datos) return <CargaVista filas={4} />;
+
+  if (esBloqueoPremium(reportes.error)) {
+    return (
+      <BloqueoReportes
+        plan={plan}
+        ahora={ahora}
+        rol={rol}
+        onActivada={() => {
+          plan.recargar();
+          reportes.recargar();
+        }}
+      />
+    );
+  }
+
+  if (reportes.error && !reportes.datos) return <ErrorVista error={reportes.error} onReintentar={reportes.recargar} />;
+
+  return (
+    <div className="space-y-10">
+      <Ausentismo citas={citas.datos} ahora={ahora} />
+      <HistorialEnvios reportes={reportes} />
+    </div>
   );
 }
 
@@ -194,35 +203,24 @@ export default function ReportesView({ plan, citas, ahora, rol }) {
   const esDireccion = rol === "direccion";
 
   let contenido;
-  if (!reportes.conocido) {
-    contenido = plan.error ? <ErrorVista onReintentar={plan.recargar} /> : <CargaVista filas={4} />;
-  } else if (!reportes.habilitado) {
-    contenido = (
-      <PanelPremium titulo="Analítica avanzada de ausentismo" mensaje={MENSAJES[MODULO.REPORTES]} vistaPrevia={<VistaPrevia />}>
-        {reportes.pruebaDisponible && esDireccion && (
-          <ActivarPrueba diasPrueba={plan.datos?.diasPrueba ?? 3} onActivada={plan.recargar} />
-        )}
-        {reportes.pruebaDisponible && !esDireccion && (
-          <p className="text-sm text-[#A3AEBD]">Dirección puede activar una prueba gratuita de 3 días.</p>
-        )}
-        {!reportes.pruebaDisponible && <p className="text-sm text-[#A3AEBD]">La prueba gratuita de este módulo ya se utilizó.</p>}
-        <EnlaceAstra />
-      </PanelPremium>
-    );
+  if (!reportes.conocido && plan.cargando) {
+    contenido = <CargaVista filas={4} />;
+  } else if (reportes.conocido && !reportes.habilitado) {
+    contenido = <BloqueoReportes plan={plan} ahora={ahora} rol={rol} onActivada={plan.recargar} />;
   } else if (!esDireccion) {
-    contenido = (
+    contenido = reportes.habilitado ? (
       <div className={`${SUPERFICIE} px-6 py-10`}>
         <p className="text-sm font-medium text-[#E6E9EE]">Los reportes los consulta Dirección.</p>
-        <p className="mt-1 text-sm text-[#A3AEBD]">El módulo está activo para la clínica; el detalle es de acceso restringido.</p>
+        <p className="mt-1 text-sm text-[#A3AEBD]">
+          El módulo está activo para la clínica; el detalle es de acceso restringido.
+        </p>
       </div>
+    ) : (
+      // Sin dato del plan y sin acceso a /api/reportes: se muestra el bloqueo, no un error.
+      <BloqueoReportes plan={plan} ahora={ahora} rol={rol} onActivada={plan.recargar} />
     );
   } else {
-    contenido = (
-      <div className="space-y-10">
-        <Ausentismo citas={citas.datos} ahora={ahora} />
-        <HistorialEnvios />
-      </div>
-    );
+    contenido = <ModuloReportes plan={plan} citas={citas} ahora={ahora} rol={rol} />;
   }
 
   return (
@@ -230,10 +228,13 @@ export default function ReportesView({ plan, citas, ahora, rol }) {
       <EncabezadoVista
         id="titulo-vista"
         titulo="Reportes"
-        descripcion="Inasistencia por doctor y reportes diarios enviados por correo a cada especialista."
+        descripcion="Tasa de Ausentismo por doctor y reportes diarios enviados por correo a cada especialista."
       >
         {reportes.enPrueba && (
-          <p role="status" className="inline-flex items-center gap-2 rounded-md border border-[#4A4230] px-3 py-2 text-sm text-[#C9AE72]">
+          <p
+            role="status"
+            className="inline-flex items-center gap-2 rounded-md border border-[#4A4230] px-3 py-2 text-sm text-[#C9AE72]"
+          >
             <Clock aria-hidden className="h-4 w-4" strokeWidth={1.75} />
             Prueba gratuita: {reportes.diasRestantes === 1 ? "queda 1 día" : `quedan ${reportes.diasRestantes} días`}
             <span className="text-[#7D8BA0]">(hasta el {fechaLarga(plan.datos.modulos.reportes.pruebaExpiraEn)})</span>
