@@ -17,29 +17,17 @@ router.get('/', (req, res) => {
 });
 
 // Meta envía aquí cada mensaje entrante del paciente.
-router.post('/', async (req, res) => {
-  // Responder rápido siempre — el procesamiento no debe bloquear el ack a Meta.
+router.post('/', (req, res) => {
   res.sendStatus(200);
-
-  try {
-    const entry = req.body.entry?.[0];
-    const change = entry?.changes?.[0];
-    const value = change?.value;
-    const mensaje = value?.messages?.[0];
-    if (!mensaje) return; // puede ser un evento de "status" (entregado/leído), lo ignoramos
-
-    const telefono = mensaje.from;
-    let texto = null, idInteractivo = null;
-
-    if (mensaje.type === 'text') {
-      texto = mensaje.text.body;
-    } else if (mensaje.type === 'interactive') {
-      idInteractivo = mensaje.interactive?.button_reply?.id || mensaje.interactive?.list_reply?.id;
-    }
-
-    await engine.procesarMensaje(telefono, texto, idInteractivo);
-  } catch (err) {
-    console.error('Error procesando mensaje entrante:', err);
+  const mensajes = (req.body?.entry ?? []).flatMap((e) => e.changes ?? []).flatMap((c) => c.value?.messages ?? []);
+  for (const mensaje of mensajes) {
+    if (yaProcesado(mensaje.id)) continue;
+    const texto = mensaje.type === 'text' ? mensaje.text?.body ?? null : null;
+    const idInteractivo = mensaje.type === 'interactive'
+      ? mensaje.interactive?.button_reply?.id || mensaje.interactive?.list_reply?.id || null
+      : null;
+    enCola(mensaje.from, () => engine.procesarMensaje(mensaje.from, texto, idInteractivo))
+      .catch((err) => console.error('Error procesando mensaje entrante:', err));
   }
 });
 

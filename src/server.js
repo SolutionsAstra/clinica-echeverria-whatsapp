@@ -116,7 +116,8 @@ app.use('/api/auth', authRouter);
 
 // Servicios para el Asistente de WhatsApp: API key, sin sesión.
 // DEBEN ir antes de cualquier app.use('/api', requireLogin, ...) o el asistente recibe 401.
-app.use('/api/ia/derivaciones', iaApiKey, derivacionesModule.iaRouter);
+// ──► RUTA HUMANA: Panel administrativo protegido con sesión de Express
+app.use('/api/derivaciones', requireLogin, derivacionesModule.router);
 // Agendamiento automático = módulo premium (contrato o prueba de 7 días vigente).
 // La barrera vive en el servidor: sin el módulo, POST /api/vet/citas responde
 // 403 { error: 'MODULO_PREMIUM', modulo: 'agendamiento_ia' } aunque el bot lo intente.
@@ -128,7 +129,8 @@ app.use('/api/vet', iaApiKey, vetModule.router);
 // Bandeja de derivaciones del panel: sesión + rol (recepcion/direccion)
 //   GET  /api/derivaciones
 //   POST /api/derivaciones/:id/reservar  → 201 | 409 SLOT_TAKEN | 409 DERIVACION_NO_DISPONIBLE | 422 | 503
-app.use('/api/ia/derivaciones', iaApiKey, derivacionesModule.iaRouter);
+// ──► RUTA AGÉNTICA: Pasarela pública para que el bot inyecte solicitudes con x-api-key
+app.use('/api/ia/derivaciones', requireApiKey(process.env.VET_API_KEY), derivacionesModule.iaRouter);
 // Estado del plan para pintar candados en el panel; POST /pruebas activa la prueba de 3 días.
 app.use('/api/plan', requireLogin, planModule.router);
 // Servicios para el Asistente de WhatsApp: API key, sin sesión.

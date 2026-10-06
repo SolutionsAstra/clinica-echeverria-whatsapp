@@ -75,8 +75,7 @@ async function cargarResumen(){
   const filas = [
     `<div class="metric"><div class="num">${m.total_citas}</div><div class="label">Citas totales${usuarioActual.rol==='doctor' ? ' (tu agenda)' : ' registradas'}</div></div>`,
     `<div class="metric"><div class="num">${m.confirmadas}</div><div class="label">Citas confirmadas activas</div></div>`,
-    `<div class="metric"><div class="num">${m.tasa_no_show}%</div><div class="label">Tasa de inasistencia (no-show)</div></div>`,
-  ];
+`<div class="metric"><div class="num">${m.tasa_no_show}%</div><div class="label">Tasa de Ausentismo</div></div>`,  ];
   if(m.conversaciones_escaladas !== null){
     filas.push(`<div class="metric"><div class="num">${m.conversaciones_escaladas}</div><div class="label">Conversaciones escaladas a un asesor</div></div>`);
   }
@@ -86,7 +85,7 @@ async function cargarResumen(){
 // ---- Citas ----
 function pillEstado(estado){
   if(estado==='confirmada') return '<span class="pill ok">Confirmada</span>';
-  if(estado==='no_show') return '<span class="pill warn">No-show</span>';
+if(estado==='no_show') return '<span class="pill warn">Inasistente</span>';
   return '<span class="pill muted">Cancelada</span>';
 }
 async function cargarCitas(){
@@ -110,8 +109,7 @@ async function cargarCitas(){
       <td class="row-actions">
         ${c.estado==='confirmada' ? `
           <button data-action="cancelar">Cancelar</button>
-          <button data-action="no-show">No-show</button>` : ''}
-      </td>
+          <button data-action="no-show">Marcar inasistencia</button>` : ''}      </td>
     </tr>
   `).join('');
 
@@ -121,8 +119,7 @@ async function cargarCitas(){
       const id = tr.dataset.id;
       const action = e.target.dataset.action;
       await api(`/citas/${id}/${action}`, { method:'POST' });
-      toast(action==='cancelar' ? 'Cita cancelada.' : 'Marcada como no-show.');
-      cargarCitas();
+      toast(action==='cancelar' ? 'Cita cancelada.' : 'Inasistencia registrada.');      cargarCitas();
     });
   });
 }
