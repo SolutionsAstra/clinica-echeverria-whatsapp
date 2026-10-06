@@ -23,6 +23,7 @@ import { useAhora } from "../../hooks/useAhora";
 import { useEstadoRed } from "../../hooks/useEstadoRed";
 import { useSondeo } from "../../hooks/useSondeo";
 import { MODULO, esBloqueoPremium, estadoModulo } from "./plan/plan";
+import { ProveedorPlan } from "./plan/ContextoPlan";
 import ControlSidebar from "./workspace/ControlSidebar";
 import MedicalNetworkBackground from "./workspace/MedicalNetworkBackground";
 import { FUENTE } from "./workspace/tokens";
@@ -151,7 +152,7 @@ export default function AdminDashboard({ usuarioInicial, onSesionCerrada }) {
     if (onSesionCerrada) onSesionCerrada();
     else window.location.assign(RUTA_LOGIN);
   }, [onSesionCerrada]);
-
+  const contextoPlan = { plan, rol, ahora };
   let contenido;
   switch (vistaActiva) {
     case "derivaciones":
@@ -192,7 +193,7 @@ export default function AdminDashboard({ usuarioInicial, onSesionCerrada }) {
       contenido = <UsuariosView plan={plan} doctores={doctores} usuarioActual={usuario} />;
       break;
     default:
-      contenido = <ResumenView rol={rol} citas={citas.datos} ahora={ahora} />;
+      contenido = <ResumenView rol={rol} citas={citas.datos} plan={plan} ahora={ahora} />;
   }
 
   return (

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ausentismoPorDoctor } from "./ausentismo.js";
+import { ausentismoPorDoctor, tasaAusentismo } from "./ausentismo.js";
 
 const AHORA = Date.parse("2026-10-04T15:00:00Z");
 const c = (id, doctor_id, estado, inicio, extra = {}) => ({
@@ -25,4 +26,17 @@ test("tasa de no-show por doctor sobre citas ya ocurridas; canceladas y futuras 
 test("sin citas ocurridas no se inventa una tasa", () => {
   assert.deepEqual(ausentismoPorDoctor([c(1, 1, "confirmada", "2026-10-09T15:00:00Z")], AHORA), []);
   assert.deepEqual(ausentismoPorDoctor(null, AHORA), []);
+});
+test("tasaAusentismo: solo el periodo, solo ocurridas y filtro por origen", () => {
+  const citas = [
+    c(1, 1, "no_show", "2026-10-02T13:00:00Z", { origen: "ia" }),
+    c(2, 1, "completada", "2026-10-02T14:00:00Z", { origen: "ia" }),
+    c(3, 1, "no_show", "2026-10-02T15:00:00Z", { origen: "panel" }),
+    c(4, 1, "confirmada", "2026-10-05T15:00:00Z", { origen: "ia" }), // futura
+    c(5, 1, "cancelada", "2026-10-02T16:00:00Z", { origen: "ia" }),
+  ];
+  const periodo = { desde: "2026-10-01T00:00:00Z", hasta: "2026-10-08T00:00:00Z", ahoraMs: AHORA };
+  assert.deepEqual(tasaAusentismo(citas, periodo), { ocurridas: 3, inasistentes: 2, tasa: 67 });
+  assert.deepEqual(tasaAusentismo(citas, { ...periodo, origen: "ia" }), { ocurridas: 2, inasistentes: 1, tasa: 50 });
+  assert.deepEqual(tasaAusentismo([], periodo), { ocurridas: 0, inasistentes: 0, tasa: null });
 });

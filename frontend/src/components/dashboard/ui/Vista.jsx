@@ -1,4 +1,6 @@
 import { AlertCircle, CheckCircle2, RotateCw } from "lucide-react";
+import { esBloqueoPremium } from "../plan/plan";
+import { BloqueoPorRespuesta } from "../workspace/BloqueoPremium";
 import { BOTON_SECUNDARIO, SUPERFICIE } from "./estilos";
 
 /** Contenedor estándar de cada sección: mismo ancho máximo y ritmo de 8 px en todo el panel. */
@@ -48,7 +50,15 @@ function explicarError(error) {
   return legible ?? "La solicitud no se pudo completar.";
 }
 
-export function ErrorVista({ titulo = "No se pudo cargar esta sección.", detalle, error, onReintentar }) {
+/**
+ * Último recurso de cada vista. Un 403 MODULO_PREMIUM es una respuesta comercial válida:
+ * aquí se convierte en <BloqueoPremium> y jamás en "No se pudo cargar esta sección".
+ */
+export function ErrorVista({ titulo = "No se pudo cargar esta sección.", detalle, error, onReintentar, vistaPrevia }) {
+  if (esBloqueoPremium(error)) {
+    return <BloqueoPorRespuesta error={error} vistaPrevia={vistaPrevia} onActivada={onReintentar} />;
+  }
+
   return (
     <div role="alert" className={`${SUPERFICIE} px-6 py-10`}>
       <p className="text-sm font-medium text-[#E6E9EE]">{titulo}</p>

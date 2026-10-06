@@ -12,7 +12,7 @@ import { TAMANO_COMPACTO } from "../ui/estilos";
 import { BotonBloqueado } from "../ui/Premium";
 import { FOCO } from "./tokens";
 
-const ETIQUETA = "Lanzar Recordatorio Manual WhatsApp / Correo";
+const ETIQUETA = "Lanzar Recordatorio Manual WhatsApp";
 
 export default function BotonRecordatorio({ citaId, paciente, habilitado, variante = "compacto", className = "" }) {
   const [estado, setEstado] = useState("inactivo"); // inactivo | enviando | enviado

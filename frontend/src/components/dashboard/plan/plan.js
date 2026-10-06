@@ -6,7 +6,7 @@
  *
  * Forma de la respuesta:
  *   { modulos: { [modulo]: { habilitado, origen: 'contrato'|'prueba'|null, pruebaExpiraEn, pruebaDisponible } },
- *     operadores: { activos, maximo }, diasPrueba }
+ *     operadores: { activos, maximo }, diasPrueba, diasPruebaPorModulo }
  */
 
 export const MODULO = Object.freeze({
@@ -14,19 +14,33 @@ export const MODULO = Object.freeze({
   MULTI_CALENDARIO: "multi_calendario",
   NOTIFICACIONES: "notificaciones_avanzadas",
   AGENDAMIENTO_IA: "agendamiento_ia",
-    [MODULO.AGENDAMIENTO_IA]:
-    "Agendamiento Automático con IA: el asistente confirma citas por WhatsApp las 24 horas. Consulte a Soluciones Astra para activarlo.",
 });
+
+/** Código con el que el servidor responde un módulo no contratado (src/modules/plan/http/plan.router.ts). */
+export const CODIGO_BLOQUEO_PREMIUM = "MODULO_PREMIUM";
 
 /** Textos comerciales acordados con Soluciones Astra: no reescribir sin su visto bueno. */
 export const MENSAJES = Object.freeze({
-    [MODULO.REPORTES]:
+  [MODULO.REPORTES]:
     "Módulo Premium Activo en Plan Corporativo. Consulte a Soluciones Astra para habilitar la analítica avanzada de ausentismo (Pacientes Inasistentes).",
   [MODULO.MULTI_CALENDARIO]: "Función Multi-Calendario Unificado disponible contactando a Soluciones Astra.",
   [MODULO.NOTIFICACIONES]: "Requiere la activación del Módulo de Notificaciones Avanzadas de Astra.",
+  [MODULO.AGENDAMIENTO_IA]:
+    "Agendamiento Automático con IA: el asistente confirma citas por WhatsApp las 24 horas. Consulte a Soluciones Astra para activarlo.",
   LIMITE_OPERADORES:
     "Límite de operadores alcanzado. Consulte a Soluciones Astra para adquirir licencias de usuarios adicionales.",
 });
+
+/** Título de la tarjeta de bloqueo de cada módulo. */
+export const TITULOS = Object.freeze({
+  [MODULO.REPORTES]: "Analítica avanzada de ausentismo",
+  [MODULO.MULTI_CALENDARIO]: "Multi-Calendario Unificado",
+  [MODULO.NOTIFICACIONES]: "Notificaciones Avanzadas",
+  [MODULO.AGENDAMIENTO_IA]: "Agente IA Agenda",
+});
+
+/** Respaldo si GET /api/plan aún no expone diasPruebaPorModulo (igual a DIAS_PRUEBA_POR_MODULO del servidor). */
+const DIAS_PRUEBA_RESPALDO = Object.freeze({ [MODULO.REPORTES]: 3, [MODULO.AGENDAMIENTO_IA]: 7 });
 
 const DIA_MS = 86_400_000;
 
@@ -71,14 +85,26 @@ export function cupoOperadores(plan) {
     excedente: Math.max(0, o.activos - o.maximo),
   };
 }
+
 /**
  * El servidor respondió "módulo no contratado" (403 MODULO_PREMIUM). Es un estado comercial,
- * no un error de carga: la vista debe mostrar el bloqueo, no "No se pudo cargar esta sección".
+ * no un error de carga: la vista debe mostrar el bloqueo, nunca "No se pudo cargar esta sección".
  */
 export function esBloqueoPremium(err) {
-  return err?.status === 403 && err?.code === "MODULO_PREMIUM";
+  return err?.status === 403 && err?.code === CODIGO_BLOQUEO_PREMIUM;
 }
-/** Días de prueba del módulo (7 para agendamiento_ia, 3 para reportes). */
+
+/**
+ * Días de prueba del módulo según el servidor (7 agendamiento_ia, 3 reportes).
+ * 0 = el módulo no ofrece prueba: el bloqueo solo invita a contactar a Soluciones Astra.
+ */
 export function diasPruebaDe(plan, modulo) {
-  return plan?.diasPruebaPorModulo?.[modulo] ?? plan?.diasPrueba ?? 3;
+  const porModulo = plan?.diasPruebaPorModulo;
+  if (porModulo && typeof porModulo === "object") return Number(porModulo[modulo]) || 0;
+  return DIAS_PRUEBA_RESPALDO[modulo] ?? plan?.diasPrueba ?? 0;
+}
+
+export function etiquetaPrueba(dias) {
+  if (!dias || dias <= 0) return "Probar Gratis";
+  return `Probar Gratis por ${dias} ${dias === 1 ? "día" : "días"}`;
 }

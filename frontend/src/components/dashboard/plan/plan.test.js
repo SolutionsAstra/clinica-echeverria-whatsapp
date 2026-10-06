@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MENSAJES, MODULO, cupoOperadores, estadoModulo } from "./plan.js";
-import { esBloqueoPremium } from "./plan.js";
+import { MENSAJES, MODULO, TITULOS, cupoOperadores, diasPruebaDe, esBloqueoPremium, estadoModulo, etiquetaPrueba } from "./plan.js";
 
 const DIA = 86_400_000;
 const AHORA = Date.parse("2026-10-04T15:00:00Z");
@@ -94,4 +94,16 @@ test("esBloqueoPremium: solo un 403 MODULO_PREMIUM, nunca un fallo de red ni otr
   assert.equal(esBloqueoPremium({ status: 403, code: "Esa cita no pertenece a tu agenda" }), false);
   assert.equal(esBloqueoPremium({ status: undefined, code: "SIN_CONEXION" }), false);
   assert.equal(esBloqueoPremium(null), false);
+});
+test("días de prueba por módulo: lee diasPruebaPorModulo y no inventa pruebas", () => {
+  const p = { diasPrueba: 3, diasPruebaPorModulo: { reportes: 3, agendamiento_ia: 7 } };
+  assert.equal(diasPruebaDe(p, MODULO.AGENDAMIENTO_IA), 7);
+  assert.equal(diasPruebaDe(p, MODULO.MULTI_CALENDARIO), 0);
+  assert.equal(diasPruebaDe(null, MODULO.AGENDAMIENTO_IA), 7);
+  assert.equal(etiquetaPrueba(7), "Probar Gratis por 7 días");
+});
+
+test("agendamiento_ia tiene título y mensaje de Soluciones Astra", () => {
+  assert.equal(TITULOS[MODULO.AGENDAMIENTO_IA], "Agente IA Agenda");
+  assert.match(MENSAJES[MODULO.AGENDAMIENTO_IA], /Soluciones Astra/);
 });

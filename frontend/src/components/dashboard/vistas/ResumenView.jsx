@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { obtenerMetricas } from "../../../api/panel";
 import { useSondeo } from "../../../hooks/useSondeo";
+import AgendamientoIaCard from "../plan/AgendamientoIaCard";
 import { diaEnZona } from "../workspace/agenda";
 import { ORDEN_ESPECIALIDADES, especialidad } from "../workspace/especialidades";
 import { SUPERFICIE } from "../ui/estilos";
@@ -34,7 +35,7 @@ function agruparHoy(citas, ahora) {
   return ORDEN_ESPECIALIDADES.map((codigo) => ({ codigo, ...(grupos.get(codigo) ?? { total: 0, siguiente: null }) }));
 }
 
-export default function ResumenView({ rol, citas, ahora }) {
+export default function ResumenView({ rol, citas, plan, ahora }) {
   const metricas = useSondeo(cargarMetricas, { intervaloMs: 60000 });
   const hoy = useMemo(() => agruparHoy(citas, ahora), [citas, ahora]);
   const m = metricas.datos;
@@ -60,11 +61,12 @@ export default function ResumenView({ rol, citas, ahora }) {
             etiqueta="Tasa de Ausentismo"
             valor={`${m.tasa_no_show}%`}
             nota={`${m.no_show} ${m.no_show === 1 ? "paciente inasistente" : "pacientes inasistentes"} de ${m.total_citas} citas`}
-          />          {m.conversaciones_escaladas != null && (
-            <Cifra etiqueta="Escaladas a un asesor" valor={m.conversaciones_escaladas} />
-          )}
+          />
+          {m.conversaciones_escaladas != null && <Cifra etiqueta="Escaladas a un asesor" valor={m.conversaciones_escaladas} />}
         </dl>
       )}
+
+      {rol === "direccion" && plan && <AgendamientoIaCard plan={plan} citas={citas} ahora={ahora} rol={rol} />}
 
       <section aria-labelledby="hoy-titulo" className="mt-10">
         <h2 id="hoy-titulo" className="text-base font-semibold text-[#E6E9EE]">

@@ -21,13 +21,11 @@ import { BotonBloqueado } from "../ui/Premium";
 import { CargaVista, ContenedorVista, EncabezadoVista, ErrorVista, Resultado, VacioVista } from "../ui/Vista";
 import BotonRecordatorio from "../workspace/BotonRecordatorio";
 
-const ETIQUETA_RECORDATORIO = "Lanzar Recordatorio Manual WhatsApp / Correo";
-
+const ETIQUETA_RECORDATORIO = "Lanzar Recordatorio Manual WhatsApp (lista visible)";
 const ESTADOS = {
   confirmada: { nombre: "Confirmada", clase: "border-[#2C5B53] text-[#86D5BC]" },
   completada: { nombre: "Completada", clase: "border-[#2A4266] text-[#A3AEBD]" },
-  no_show: { nombre: "Inasistente", clase: "border-[#4A4230] text-[#C9AE72]" },
-  cancelada: { nombre: "Cancelada", clase: "border-[#1A2D48] text-[#7D8BA0]" },
+  no_show: { nombre: "Inasistente", filtro: "Pacientes inasistentes", clase: "border-[#4A4230] text-[#C9AE72]" },  cancelada: { nombre: "Cancelada", clase: "border-[#1A2D48] text-[#7D8BA0]" },
 };
 
 const PERIODOS = [
@@ -194,7 +192,7 @@ export default function CitasView({ citas, plan, ahora, rol }) {
             <option value="">Todos los estados</option>
             {Object.entries(ESTADOS).map(([id, e]) => (
               <option key={id} value={id}>
-                {e.nombre}
+                {e.filtro ?? e.nombre}
               </option>
             ))}
           </select>
@@ -249,6 +247,7 @@ export default function CitasView({ citas, plan, ahora, rol }) {
             <tbody>
               {lista.map((c) => {
                 const esp = especialidad(c.especialidad_codigo);
+                const recordable = puedeRecordar && c.estado === "confirmada" && Date.parse(c.fecha_hora_inicio) > ahora;
                 return (
                   <tr key={c.id} className={FILA}>
                     <td className={TD}>
@@ -256,6 +255,16 @@ export default function CitasView({ citas, plan, ahora, rol }) {
                       <a href={enlaceTel(c.paciente_telefono)} className="text-xs tabular-nums text-[#7D8BA0] hover:text-[#E6E9EE]">
                         {telefono(c.paciente_telefono)}
                       </a>
+                      {recordable && (
+                        <div className="mt-2.5">
+                          <BotonRecordatorio
+                            citaId={c.id}
+                            paciente={c.paciente_nombre}
+                            habilitado={notificaciones.habilitado}
+                            variante="compacto"
+                          />
+                        </div>
+                      )}
                     </td>
                     <td className={TD}>
                       <span className="inline-flex items-center gap-2">
@@ -269,24 +278,14 @@ export default function CitasView({ citas, plan, ahora, rol }) {
                       <PildoraEstado estado={c.estado} />
                     </td>
                     <td className={`${TD} w-px whitespace-nowrap`}>
-                      <div className="flex items-center justify-end gap-1.5">
-                        {puedeRecordar && c.estado === "confirmada" && Date.parse(c.fecha_hora_inicio) > ahora && (
-                          <BotonRecordatorio
-                            citaId={c.id}
-                            paciente={c.paciente_nombre}
-                            habilitado={notificaciones.habilitado}
-                            variante="icono"
-                          />
-                        )}
-                        <AccionesCita
-                          cita={c}
-                          ocupada={ocupada === c.id}
-                          confirmando={confirmando === c.id}
-                          onPedirCancelar={setConfirmando}
-                          onSoltar={() => setConfirmando(null)}
-                          onAccion={ejecutar}
-                        />
-                      </div>
+                      <AccionesCita
+                        cita={c}
+                        ocupada={ocupada === c.id}
+                        confirmando={confirmando === c.id}
+                        onPedirCancelar={setConfirmando}
+                        onSoltar={() => setConfirmando(null)}
+                        onAccion={ejecutar}
+                      />
                     </td>
                   </tr>
                 );

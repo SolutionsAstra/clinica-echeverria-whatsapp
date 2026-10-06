@@ -16,7 +16,7 @@ import { BOTON_SECUNDARIO, FILA, SUPERFICIE, TABLA, TD, TH } from "../ui/estilos
 import { fechaHora, fechaLarga } from "../ui/formato";
 import { CargaVista, ContenedorVista, EncabezadoVista, ErrorVista, Resultado, VacioVista } from "../ui/Vista";
 import BloqueoPremium from "../workspace/BloqueoPremium";
-
+import { MENSAJES, MODULO, diasPruebaDe, esBloqueoPremium, estadoModulo } from "../plan/plan";
 /** Silueta del módulo para el fondo del bloqueo: barras y filas sin cifras reales. */
 function VistaPrevia() {
   const barras = [72, 48, 30, 18];
@@ -55,8 +55,7 @@ function BloqueoReportes({ plan, ahora, rol, onActivada }) {
       modulo={MODULO.REPORTES}
       rol={rol}
       pruebaDisponible={e.conocido ? e.pruebaDisponible : null}
-      diasPrueba={plan.datos?.diasPrueba ?? 3}
-      vistaPrevia={<VistaPrevia />}
+      diasPrueba={diasPruebaDe(plan.datos, MODULO.REPORTES)}      vistaPrevia={<VistaPrevia />}
       onActivada={onActivada}
     />
   );
@@ -85,7 +84,7 @@ function Ausentismo({ citas, ahora }) {
               <span className="text-right text-sm tabular-nums text-[#C7CCD3]">
                 {f.tasa}%{" "}
                 <span className="text-[#7D8BA0]">
-                  ({f.noShow} de {f.ocurridas} {f.noShow === 1 ? "inasistente" : "inasistentes"})
+                  ({f.noShow} de {f.ocurridas} {f.noShow === 1 ? "paciente inasistente" : "pacientes inasistentes"})
                 </span>
               </span>
             </li>

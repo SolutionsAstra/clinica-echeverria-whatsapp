@@ -15,6 +15,7 @@ import AgendaAlertsPanel from "../workspace/AgendaAlertsPanel";
 import BloqueoPremium from "../workspace/BloqueoPremium";
 import DerivacionesColumn from "../workspace/DerivacionesColumn";
 import { seleccionarProximasCitas } from "../workspace/agenda";
+import { MENSAJES, MODULO, diasPruebaDe, esBloqueoPremium, estadoModulo } from "../plan/plan";
 
 const SIN_CITAS = [];
 const MENSAJE_BANDEJA =
@@ -67,8 +68,7 @@ export default function DerivacionesView({ derivaciones, citas, plan, ahora, rol
               modulo={modulo}
               rol={rol}
               pruebaDisponible={estadoBloqueo?.conocido ? estadoBloqueo.pruebaDisponible : null}
-              diasPrueba={plan.datos?.diasPrueba ?? 3}
-              vistaPrevia={<SiluetaBandeja />}
+              diasPrueba={diasPruebaDe(plan.datos, modulo)}              vistaPrevia={<SiluetaBandeja />}
               onActivada={() => {
                 plan.recargar();
                 derivaciones.recargar();
