@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import { isSpecialty } from "../../vet";
+import { isSpecialty, SPECIALTY_RULES } from "../../vet";
 import { BLOQUES, type Bloque } from "../domain/derivacion";
 import type { DerivacionesRepository, DerivacionRow, Logger } from "../application/ports";
 
@@ -48,8 +48,10 @@ export function createPgDerivacionesRepository(
       fechaPreferida: r.fecha_preferida,
       notas: r.notas,
       capturadaEn: r.capturada_en,
+      
     };
   }
+  
 
   return {
     async listarPendientes() {
@@ -130,6 +132,27 @@ export function createPgDerivacionesRepository(
         [d.telefono, d.pacienteNombre, d.nombreAcudiente, d.especialidad, d.doctorId, d.bloque, d.fechaPreferida, d.notas],
       );
       return rows[0].id;
+    },
+        async horarioOcupado({ doctorId, especialidad, inicio, fin }) {
+      const pool = await getPool();
+      const tipoRecurso = SPECIALTY_RULES[especialidad].resourceType;
+      // Estados activos: mantener alineado con ACTIVE_STATES de pg-scheduling-repository.
+      // El recurso se resuelve igual que resourceIdFor (primer id del tipo).
+      const { rows } = await pool.query(
+        `SELECT 1
+         FROM ${t("citas")} c
+         WHERE c.estado = 'confirmada'
+           AND c.fecha_hora_inicio < $3
+           AND c.fecha_hora_fin    > $2
+           AND (
+             c.doctor_id = $1::int
+             OR ($4::text IS NOT NULL AND c.recurso_id = (
+               SELECT r.id FROM ${t("recursos")} r WHERE r.tipo = $4::text ORDER BY r.id LIMIT 1))
+           )
+         LIMIT 1`,
+        [doctorId, inicio, fin, tipoRecurso],
+      );
+      return rows.length > 0;
     },
   };
 }

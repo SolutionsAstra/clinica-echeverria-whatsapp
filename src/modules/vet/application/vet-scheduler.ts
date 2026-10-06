@@ -4,8 +4,7 @@ import { workingHoursOn, type DailyHours } from "../domain/schedule";
 import { durationOf, resourceTypeOf, type Specialty } from "../domain/specialty";
 import { vetDays, type DayLabel } from "../domain/vet-window";
 import { VetError } from "../domain/errors";
-import type { BusyBlock, Clock, PatientInput, Provider, SchedulingRepository } from "./ports";
-
+import type { BookingOrigin, BusyBlock, Clock, PatientInput, Provider, SchedulingRepository } from "./ports";
 export interface VetConfig {
   timeZone: string;
   /** Hora local a partir de la cual "Hoy" sale de la ventana. */
@@ -49,6 +48,8 @@ export interface BookingRequest {
   start: string;
   patient: PatientInput;
   notes?: string | null;
+    /** 'ia' solo lo indica POST /api/vet/citas (asistente con módulo agendamiento_ia). Por defecto 'panel'. */
+  origin?: BookingOrigin;
 }
 
 export interface Booking {
@@ -184,6 +185,7 @@ export function createVetScheduler(deps: {
         end,
         patient,
         notes,
+        origin: request.origin === "ia" ? "ia" : "panel", // lista blanca: cualquier otro valor cuenta como panel
       });
 
       return {

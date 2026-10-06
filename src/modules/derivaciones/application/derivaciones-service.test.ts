@@ -32,7 +32,7 @@ const BOOKING: Booking = {
 };
 
 /** Repositorio en memoria que registra cada transición de estado. */
-function memoryRepo(opts: { rows?: DerivacionRow[]; reclamable?: boolean; existe?: boolean; failMarcar?: boolean } = {}) {
+function memoryRepo(opts: { rows?: DerivacionRow[]; reclamable?: boolean; existe?: boolean; failMarcar?: boolean; ocupado?: boolean | Error } = {}) {
   const log: string[] = [];
   const repo: DerivacionesRepository = {
     async listarPendientes() { return opts.rows ?? [ROW]; },
@@ -45,6 +45,11 @@ function memoryRepo(opts: { rows?: DerivacionRow[]; reclamable?: boolean; existe
     },
     async marcarNotificacion(id, error) { log.push(`notificacion:${id}:${error ?? "ok"}`); },
     async registrar(input) { log.push(`registrar:${input.telefono}`); return 2001; },
+        async horarioOcupado(q) {
+      log.push(`ocupado:${q.doctorId}:${q.inicio.toISOString()}:${q.fin.toISOString()}`);
+      if (opts.ocupado instanceof Error) throw opts.ocupado;
+      return opts.ocupado ?? false;
+    },
   };
   return { repo, log };
 }
@@ -297,4 +302,46 @@ test("registrar valida y normaliza la captura del asistente", async () => {
   await assert.rejects(svc.registrar({ ...base, fecha: "2026-02-31" }), invalid);
   await assert.rejects(svc.registrar({ ...base, paciente: " " }), invalid);
   await assert.rejects(svc.registrar({ ...base, telefono: "12" }), invalid);
+});
+test("bloque ya ocupado en citas: SLOT_NOT_OFFERED se convierte en SLOT_TAKEN (409)", async () => {
+  const { repo, log } = memoryRepo({ ocupado: true });
+  const { notifier, sent } = fakeNotifier();
+  const svc = createDerivacionesService({
+    repository: repo,
+    scheduler: fakeScheduler(new VetError("SLOT_NOT_OFFERED", "x")).scheduler,
+    notifier,
+  });
+  await assert.rejects(
+    svc.reservar("drv_1041", { inicio: "2026-09-29T08:00:00-04:00" }, { usuarioId: 5 }),
+    (e: unknown) => e instanceof VetError && e.code === "SLOT_TAKEN",
+  );
+  // Neurología = 60 min estrictos → [12:00Z, 13:00Z)
+  assert.deepEqual(log, ["reclamar:1041:5", "liberar:1041", "ocupado:1:2026-09-29T12:00:00.000Z:2026-09-29T13:00:00.000Z"]);
+  await flush();
+  assert.equal(sent.length, 0);
+});
+
+test("SLOT_NOT_OFFERED sin choque en citas se conserva (422: fuera de ventana o desalineado)", async () => {
+  const svc = createDerivacionesService({
+    repository: memoryRepo({ ocupado: false }).repo,
+    scheduler: fakeScheduler(new VetError("SLOT_NOT_OFFERED", "x")).scheduler,
+    notifier: fakeNotifier().notifier,
+  });
+  await assert.rejects(
+    svc.reservar("drv_1041", { inicio: "2026-09-29T08:00:00-04:00" }, { usuarioId: 5 }),
+    (e: unknown) => e instanceof VetError && e.code === "SLOT_NOT_OFFERED",
+  );
+});
+
+test("si la verificación de choque falla, se propaga el error original", async () => {
+  const svc = createDerivacionesService({
+    repository: memoryRepo({ ocupado: new Error("timeout") }).repo,
+    scheduler: fakeScheduler(new VetError("SLOT_NOT_OFFERED", "x")).scheduler,
+    notifier: fakeNotifier().notifier,
+    logger: silent,
+  });
+  await assert.rejects(
+    svc.reservar("drv_1041", { inicio: "2026-09-29T08:00:00-04:00" }, { usuarioId: 5 }),
+    (e: unknown) => e instanceof VetError && e.code === "SLOT_NOT_OFFERED",
+  );
 });

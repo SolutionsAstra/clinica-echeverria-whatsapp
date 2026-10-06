@@ -13,6 +13,9 @@ export const MODULO = Object.freeze({
   REPORTES: "reportes",
   MULTI_CALENDARIO: "multi_calendario",
   NOTIFICACIONES: "notificaciones_avanzadas",
+  AGENDAMIENTO_IA: "agendamiento_ia",
+    [MODULO.AGENDAMIENTO_IA]:
+    "Agendamiento Automático con IA: el asistente confirma citas por WhatsApp las 24 horas. Consulte a Soluciones Astra para activarlo.",
 });
 
 /** Textos comerciales acordados con Soluciones Astra: no reescribir sin su visto bueno. */
@@ -74,4 +77,8 @@ export function cupoOperadores(plan) {
  */
 export function esBloqueoPremium(err) {
   return err?.status === 403 && err?.code === "MODULO_PREMIUM";
+}
+/** Días de prueba del módulo (7 para agendamiento_ia, 3 para reportes). */
+export function diasPruebaDe(plan, modulo) {
+  return plan?.diasPruebaPorModulo?.[modulo] ?? plan?.diasPrueba ?? 3;
 }

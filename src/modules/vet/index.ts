@@ -14,7 +14,7 @@ export type {
   BookingRequest,
   Booking,
 } from "./application/vet-scheduler";
-export type { SchedulingRepository, Provider, BusyBlock, PatientInput, NewAppointment, Clock } from "./application/ports";
+export type { SchedulingRepository, Provider, BusyBlock, PatientInput, NewAppointment, Clock, BookingOrigin } from "./application/ports";
 export { SPECIALTIES, SPECIALTY_RULES, SPECIALTY_DURATION_MIN, isSpecialty, parseSpecialty } from "./domain/specialty";
 export type { Specialty } from "./domain/specialty";
 export type { DayLabel } from "./domain/vet-window";

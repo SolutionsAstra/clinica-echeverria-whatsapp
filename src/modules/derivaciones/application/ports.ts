@@ -45,6 +45,11 @@ export interface DerivacionesRepository {
   /** error = null → enviada. */
   marcarNotificacion(id: number, error: string | null): Promise<void>;
   registrar(input: NuevaDerivacion): Promise<number>;
+    /**
+   * ¿Existe una cita activa que choque con [inicio, fin) para ese doctor o para el recurso
+   * físico de la especialidad? Se usa para clasificar un rechazo de vet.book como conflicto.
+   */
+  horarioOcupado(q: { doctorId: number; especialidad: Specialty; inicio: Date; fin: Date }): Promise<boolean>;
 }
 
 /** Solo necesitamos `book` del módulo VET: dependemos de la interfaz, no de la implementación. */

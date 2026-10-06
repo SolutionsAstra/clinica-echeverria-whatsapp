@@ -205,3 +205,12 @@ test("un segundo doctor libre en el mismo bloque también es reservable", async 
   assert.equal(booking.doctorName, "Dr. Núñez");
   assert.equal(inserted[0].resourceId, null);
 });
+test("origen de la cita: 'panel' por defecto, 'ia' solo si se indica, y lista blanca", async () => {
+  const { repo, inserted } = memoryRepo({ providers: { pediatria: [ROJAS] } });
+  const vet = createVetScheduler({ repository: repo, clock: () => caracas("2026-09-28T16:00:00") });
+  const patient = { telefono: "584141234567", nombre: "Ana Pérez" };
+  await vet.book({ specialty: "pediatria", doctorId: 1, start: "2026-09-29T08:00:00-04:00", patient });
+  await vet.book({ specialty: "pediatria", doctorId: 1, start: "2026-09-29T08:30:00-04:00", patient, origin: "ia" });
+  await vet.book({ specialty: "pediatria", doctorId: 1, start: "2026-09-29T09:00:00-04:00", patient, origin: "otro" as never });
+  assert.deepEqual(inserted.map((a) => a.origin), ["panel", "ia", "panel"]);
+});

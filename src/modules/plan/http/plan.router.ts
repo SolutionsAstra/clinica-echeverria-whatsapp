@@ -75,3 +75,21 @@ export function planRouter(service: PlanService, opts: { authorizeIniciarPrueba?
 
   return router;
 }
+/**
+ * Para el Asistente de WhatsApp (x-api-key, sin sesión). Expone SOLO lo que el bot necesita
+ * para decidir su modo, no el contrato completo de la clínica.
+ *   GET / → { agendamientoAutomatico, origen: 'contrato'|'prueba'|null, pruebaExpiraEn }
+ */
+export function capacidadesIaRouter(service: PlanService): Router {
+  const router = Router();
+  router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const m = (await service.estado()).modulos.agendamiento_ia;
+      res.set("Cache-Control", "no-store");
+      res.json({ agendamientoAutomatico: m.habilitado, origen: m.origen, pruebaExpiraEn: m.pruebaExpiraEn });
+    } catch (err) {
+      next(err);
+    }
+  });
+  return router;
+}

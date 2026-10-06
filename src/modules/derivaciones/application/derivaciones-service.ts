@@ -1,4 +1,4 @@
-import { isSpecialty, type Booking } from "../../vet";
+import { isSpecialty, isVetError, SPECIALTY_RULES, VetError, type Booking, type Specialty } from "../../vet";
 import { BLOQUES, formatearId, mensajeConfirmacion, parseDerivacionId, toSolicitudDto, type Bloque, type SolicitudDto } from "../domain/derivacion";
 import { DerivacionError } from "../domain/errors";
 import type { Booker, DerivacionesRepository, DerivacionRow, Logger, Notifier } from "./ports";
@@ -39,6 +39,30 @@ export function createDerivacionesService(deps: {
 }): DerivacionesService {
   const repo = deps.repository;
   const log = deps.logger ?? console;
+    /**
+   * Validador estricto de concurrencia. Si otra cita ocupó el bloque entre que la recepcionista
+   * lo vio y pulsó "Reservar", vet.book recalcula la ventana y responde SLOT_NOT_OFFERED (422).
+   * Para el panel eso es un conflicto: se confirma contra la tabla `citas` y se devuelve
+   * SLOT_TAKEN (409). La carrera exacta dentro de insertIfFree ya llega como SLOT_TAKEN.
+   */
+  async function clasificarConflicto(
+    err: unknown,
+    q: { doctorId: number; especialidad: Specialty; inicio: string },
+  ): Promise<unknown> {
+    if (!isVetError(err) || err.code !== "SLOT_NOT_OFFERED") return err;
+    const inicio = new Date(q.inicio);
+    if (Number.isNaN(inicio.getTime())) return err;
+    const fin = new Date(inicio.getTime() + SPECIALTY_RULES[q.especialidad].durationMin * 60_000);
+    try {
+      const ocupado = await repo.horarioOcupado({ doctorId: q.doctorId, especialidad: q.especialidad, inicio, fin });
+      return ocupado
+        ? new VetError("SLOT_TAKEN", "El horario seleccionado ya fue tomado por otra cita. Elige otro.")
+        : err;
+    } catch (e) {
+      log.error("[derivaciones] No se pudo verificar el choque de horario:", e);
+      return err;
+    }
+  }
 
   /**
    * Fire-and-forget: nunca rechaza ni bloquea la respuesta HTTP. setImmediate (no una
@@ -109,10 +133,14 @@ export function createDerivacionesService(deps: {
           },
           notes: d.notas,
         });
-      } catch (err) {
+            } catch (err) {
         // Compensación: la derivación vuelve a la bandeja para elegir otra hora.
         await repo.liberar(id).catch((e: unknown) => log.error(`[derivaciones] No se pudo liberar ${formatearId(id)}:`, e));
-        throw err;
+        throw await clasificarConflicto(err, {
+          doctorId: doctorOverride ?? d.doctorId,
+          especialidad: d.especialidad,
+          inicio: String(b.inicio),
+        });
       }
 
       // 3) Cierre. La cita YA existe: si esto falla no se revierte ni se reporta error,

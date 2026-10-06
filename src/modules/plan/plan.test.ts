@@ -135,3 +135,28 @@ test("iniciarPrueba concurrente: si otra petición ganó la carrera, PRUEBA_NO_D
   const svc = createPlanService({ repository: fakeRepo({ conflicto: true }).repo, reloj: () => AHORA });
   await assert.rejects(svc.iniciarPrueba("reportes", 7), (e: unknown) => isPlanError(e) && e.code === "PRUEBA_NO_DISPONIBLE");
 });
+test("agendamiento_ia: prueba de 7 días exactos, una sola vez, y se apaga al vencer", () => {
+  const p = crearPrueba("agendamiento_ia", BASE, [], AHORA);
+  assert.equal(p.expiraEn.getTime() - p.iniciadaEn.getTime(), 7 * DIA);
+  assert.throws(() => crearPrueba("agendamiento_ia", BASE, [p], AHORA), (e: unknown) => isPlanError(e) && e.code === "PRUEBA_NO_DISPONIBLE");
+
+  const ultimoInstante = calcularEstadoPlan(BASE, [p], 1, new Date(AHORA.getTime() + 7 * DIA - 1));
+  assert.equal(ultimoInstante.modulos.agendamiento_ia.habilitado, true);
+  assert.equal(ultimoInstante.modulos.agendamiento_ia.origen, "prueba");
+
+  const vencida = calcularEstadoPlan(BASE, [p], 1, new Date(AHORA.getTime() + 7 * DIA));
+  assert.deepEqual(vencida.modulos.agendamiento_ia, { habilitado: false, origen: null, pruebaExpiraEn: null, pruebaDisponible: false });
+});
+
+test("plan base: agendamiento_ia bloqueado, con prueba disponible y días por módulo publicados", () => {
+  const e = calcularEstadoPlan(BASE, [], 1, AHORA);
+  assert.deepEqual(e.modulos.agendamiento_ia, { habilitado: false, origen: null, pruebaExpiraEn: null, pruebaDisponible: true });
+  assert.deepEqual(e.diasPruebaPorModulo, { reportes: 3, agendamiento_ia: 7 });
+});
+
+test("agendamiento_ia contratado no ofrece prueba", () => {
+  assert.throws(
+    () => crearPrueba("agendamiento_ia", { ...BASE, modulos: ["agendamiento_ia"] }, [], AHORA),
+    (e: unknown) => isPlanError(e) && e.code === "PRUEBA_NO_DISPONIBLE",
+  );
+});

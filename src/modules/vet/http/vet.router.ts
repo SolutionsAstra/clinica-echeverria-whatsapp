@@ -51,6 +51,9 @@ export function vetRouter(scheduler: VetScheduler): Router {
         start: String(body.inicio ?? ""),
         patient: (body.paciente ?? {}) as PatientInput,
         notes: typeof body.notas === "string" ? body.notas : null,
+        // Esta ruta solo la consume el asistente (x-api-key) y en server.js está tras
+        // requireModulo('agendamiento_ia'). El body NO puede elegir el origen.
+        origin: "ia",
       });
       res.status(201).json(booking);
     } catch (err) {

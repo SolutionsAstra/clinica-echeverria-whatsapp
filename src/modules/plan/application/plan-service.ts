@@ -24,6 +24,8 @@ export interface PlanService {
   exigirModulo(modulo: Modulo): Promise<void>;
   exigirCupoOperador(): Promise<void>;
   iniciarPrueba(modulo: unknown, usuarioId: number | null): Promise<EstadoPlan>;
+  /** La prueba registrada del módulo (vigente o vencida), o null si nunca se activó. */
+  pruebaDe(modulo: Modulo): Promise<Prueba | null>;
 }
 
 export function createPlanService({
@@ -67,6 +69,9 @@ export function createPlanService({
         throw new PlanError("PRUEBA_NO_DISPONIBLE", "La prueba gratuita de este módulo ya se usó o no está disponible.", prueba.modulo);
       }
       return estado();
+    },
+        async pruebaDe(modulo) {
+      return (await repository.listarPruebas()).find((p) => p.modulo === modulo) ?? null;
     },
   };
 }

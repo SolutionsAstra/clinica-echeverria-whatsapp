@@ -116,12 +116,12 @@ export function createPgSchedulingRepository(
 
         const inserted = await client.query<{ id: number }>(
           `INSERT INTO ${t("citas")}
-             (paciente_id, doctor_id, especialidad_id, recurso_id, fecha_hora_inicio, fecha_hora_fin, notas, estado)
-           SELECT $1, $2, e.id, $4, $5, $6, $7, 'confirmada'
+             (paciente_id, doctor_id, especialidad_id, recurso_id, fecha_hora_inicio, fecha_hora_fin, notas, estado, origen)
+           SELECT $1, $2, e.id, $4, $5, $6, $7, 'confirmada', $8
            FROM ${t("especialidades")} e
            WHERE e.codigo = $3
            RETURNING id`,
-          [patientId, a.doctorId, a.specialty, a.resourceId, a.start, a.end, a.notes],
+          [patientId, a.doctorId, a.specialty, a.resourceId, a.start, a.end, a.notes, a.origin ?? "panel"],
         );
         if (!inserted.rows.length) {
           throw new Error(`La especialidad '${a.specialty}' no existe en la tabla especialidades`);

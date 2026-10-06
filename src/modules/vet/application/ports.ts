@@ -22,7 +22,8 @@ export interface PatientInput {
   nombreAcudiente?: string | null;
   telefonoAcudiente?: string | null;
 }
-
+/** Quién originó la cita. Lo decide el servidor según la puerta de entrada, nunca el cliente. */
+export type BookingOrigin = "ia" | "panel";
 export interface NewAppointment {
   specialty: Specialty;
   doctorId: number;
@@ -31,6 +32,8 @@ export interface NewAppointment {
   end: Date;
   patient: PatientInput;
   notes: string | null;
+    /** Opcional por compatibilidad; el repositorio usa 'panel' si falta. */
+  origin?: BookingOrigin;
 }
 
 /**
