@@ -12,6 +12,7 @@ const sessions = require('./sessions');
 const vet = require('./integrations/vetClient');
 const derivaciones = require('./integrations/derivacionesClient');
 const { obtenerCapacidades } = require('./integrations/capacidadesClient');
+const citasIa = require('./integrations/citasIaClient');
 const { TZ, DESCRIPCION_HORARIO, estadoHorario } = require('./horarioLaboral');
 
 const BOT_NOMBRE = process.env.BOT_NOMBRE || 'Asistente Virtual';
@@ -141,7 +142,113 @@ async function ofrecerDias(telefono, sesion) {
   );
   sesion.paso = 'dia';
 }
+// ---------------- Cancelación / reagendamiento ----------------
 
+const MENSAJE_ESCALADA_CITA = {
+  PLAN_BASICO: 'Para cancelar o reagendar tu cita te paso con nuestra recepcionista, que lo gestionará contigo por este chat. '
+    + 'Tu cita sigue vigente hasta que ella lo confirme. 🙋‍♀️',
+  MENOS_DE_48H: (horas) => `Tu cita es en menos de 48 horas${horas != null ? ` (faltan unas ${horas} h)` : ''}, así que no puedo `
+    + 'cancelarla automáticamente: debes coordinarlo con nuestro personal. Ya trasladé tu caso a recepción y te escribirán por este chat. '
+    + 'Tu cita sigue vigente mientras tanto.',
+  LIMITE_REAGENDAMIENTO: 'Ya usaste el reagendamiento automático disponible. Para un nuevo cambio te paso con nuestra recepcionista, '
+    + 'que lo gestionará manualmente. Tu cita actual no se modificó.',
+};
+
+/** Registra en Escaladas y avisa al paciente con un texto específico (+ aviso si es fuera de horario). */
+async function escalarCita(telefono, motivo, detalle, textoPaciente) {
+  await db.registrarEscalada(telefono, `${motivo} · ${detalle}`.slice(0, 300));
+  const h = estadoHorario();
+  await wa.enviarTexto(telefono, textoPaciente + (h.dentroDeHorario
+    ? ''
+    : `\n\n🕘 Estamos fuera de horario (${DESCRIPCION_HORARIO}); te responderán ${h.proximaApertura}.`));
+}
+
+/** Busca la próxima cita del NÚMERO QUE ESCRIBE (nunca de otro número) y ofrece acciones. */
+async function iniciarGestionCita(telefono, sesion, presentarse = false) {
+  let citas;
+  try {
+    citas = await db.citasFuturasPorTelefono(telefono);
+  } catch (err) {
+    console.error('[engine] No se pudieron leer las citas:', err.message);
+    await escalar(telefono, 'Consulta de cita falló (BD)');
+    terminar(sesion);
+    return;
+  }
+  const intro = presentarse ? `👋 Hola, soy ${BOT_NOMBRE}, el asistente de Inteligencia Artificial de ${CLINICA}.\n\n` : '';
+  if (citas.length === 0) {
+    await wa.enviarTexto(telefono, `${intro}No encontré citas próximas con este número de WhatsApp. `
+      + 'Si agendaste con otro número, escribe "asesor" y recepción te ayudará.');
+    terminar(sesion);
+    return;
+  }
+  const cita = citas[0];
+  sesion.datos.citaId = cita.id;
+  sesion.datos.citaResumen = `${cita.especialidad_nombre} · ${fmt(cita.fecha_hora_inicio)} · ${cita.doctor_nombre}`;
+  await wa.enviarBotones(telefono,
+    `${intro}Encontré esta cita:\n📅 ${fmt(cita.fecha_hora_inicio)}\n👨‍⚕️ ${cita.doctor_nombre}\n🏥 ${cita.especialidad_nombre}\n\n¿Qué deseas hacer?`,
+    [
+      { id: 'cita_reagendar', title: 'Reagendar' },
+      { id: 'cita_cancelar', title: 'Cancelar cita' },
+      { id: 'cita_dejar', title: 'Dejarla así' },
+    ]);
+  sesion.paso = 'ver_cita_accion';
+}
+
+/**
+ * Plan básico → Escaladas sin tocar la cita.
+ * Premium → el servidor aplica 48 h y el límite de 1 reagendamiento; el bot obedece el resultado.
+ */
+async function gestionarCancelacion(telefono, sesion, intencion) {
+  const d = sesion.datos;
+  const detalle = `cita ${d.citaId} · ${d.citaResumen || ''} · pidió ${intencion}`;
+
+  if ((await modoAgendamiento()) !== 'automatico') {
+    await escalarCita(telefono, 'Cancelación/reagendamiento (plan básico)', detalle, MENSAJE_ESCALADA_CITA.PLAN_BASICO);
+    terminar(sesion);
+    return;
+  }
+
+  let r;
+  try {
+    r = await citasIa.solicitarCancelacion({ telefono, citaId: d.citaId, intencion });
+  } catch (err) {
+    console.error('[engine] Cancelación automática falló:', err.code, err.message);
+    await escalarCita(telefono, `Cancelación automática falló (${err.code})`, detalle,
+      'No pude procesar tu solicitud automáticamente 😕 Ya avisé a recepción y te escribirán por este chat. Tu cita sigue vigente.');
+    terminar(sesion);
+    return;
+  }
+
+  if (r.resultado === 'escalar') {
+    const texto = r.motivo === 'MENOS_DE_48H'
+      ? MENSAJE_ESCALADA_CITA.MENOS_DE_48H(r.horasDeAnticipacion)
+      : (MENSAJE_ESCALADA_CITA[r.motivo] || MENSAJE_ESCALADA_CITA.PLAN_BASICO);
+    await escalarCita(telefono, `Escalada ${r.motivo}`, detalle, texto);
+    terminar(sesion);
+    return;
+  }
+
+  // r.resultado === 'cancelada' → el slot ya quedó libre en la BD.
+  const reagendamiento = { modo: 'automatico', especialidad: r.especialidad, nombrePaciente: r.pacienteNombre, reagendaDe: r.citaId };
+  if (intencion === 'reagendar') {
+    sesion.datos = reagendamiento;
+    await wa.enviarTexto(telefono, '✅ Liberé tu horario anterior. Ahora elige la nueva fecha:');
+    await ofrecerDias(telefono, sesion);
+    return;
+  }
+  await wa.enviarTexto(telefono, '✅ Tu cita fue cancelada y el horario quedó libre para otro paciente.');
+  if (r.puedeReagendar) {
+    sesion.datos = reagendamiento;
+    await wa.enviarBotones(telefono, '¿Quieres reagendarla para otra fecha?', [
+      { id: 'reag_si', title: 'Sí, reagendar' },
+      { id: 'reag_no', title: 'No, gracias' },
+    ]);
+    sesion.paso = 'ofrecer_reagendar';
+  } else {
+    await wa.enviarTexto(telefono, 'Si necesitas una nueva fecha, escribe "asesor" y recepción te ayudará.');
+    terminar(sesion);
+  }
+}
 function mensajeEnHorario(d) {
   return `✅ Listo, recibí tu solicitud de ${d.especialidadNombre} para ${quien(d)} `
     + `(${d.diaElegido.titulo}, bloque de la ${ETIQUETA_BLOQUE[d.bloque].toLowerCase()}).\n\n`
@@ -197,28 +304,55 @@ async function derivarARecepcion(telefono, d) {
  * Si el servidor ya no permite agendar (prueba vencida a mitad de la conversación),
  * la solicitud se deriva a recepción con el mismo día y bloque: el paciente no se pierde.
  */
+/**
+ * Modo premium: la IA confirma la cita. Resultados: 'ok' | 'reintentar' | 'error'.
+ * Con d.reagendaDe usa /api/ia/citas/reagendar (consume el cupo de 1 reagendamiento de forma atómica).
+ */
 async function agendarAutomatico(telefono, sesion) {
   const d = sesion.datos;
   const slot = d.slotElegido;
   try {
-    await vet.reservar({
-      especialidad: d.especialidad,
-      doctorId: slot.doctorId,
-      inicio: slot.start,
-      paciente: {
+    if (d.reagendaDe) {
+      await citasIa.reagendar({
         telefono,
-        nombre: d.nombrePaciente,
-        esMenor: Boolean(d.esMenor),
-        nombreAcudiente: d.datosAcudiente || null,
-      },
-      notas: notasDe(d),
-    });
+        citaAnteriorId: d.reagendaDe,
+        especialidad: d.especialidad,
+        doctorId: slot.doctorId,
+        inicio: slot.start,
+        notas: notasDe(d),
+      });
+    } else {
+      await vet.reservar({
+        especialidad: d.especialidad,
+        doctorId: slot.doctorId,
+        inicio: slot.start,
+        paciente: {
+          telefono,
+          nombre: d.nombrePaciente,
+          esMenor: Boolean(d.esMenor),
+          nombreAcudiente: d.datosAcudiente || null,
+        },
+        notas: notasDe(d),
+      });
+    }
   } catch (err) {
     if (err.code === 'SLOT_TAKEN' || err.code === 'SLOT_NOT_OFFERED') {
+      // En reagendamiento el servidor ya devolvió el cupo: se puede reintentar.
       await wa.enviarTexto(telefono, 'Ese horario acaba de ocuparse 😕 Te muestro los disponibles actualizados.');
       delete d.slotElegido;
       await ofrecerDias(telefono, sesion);
       return 'reintentar';
+    }
+    if (d.reagendaDe) {
+      // Un reagendamiento nunca se convierte en derivación nueva: lo resuelve recepción desde Escaladas.
+      const texto = err.code === 'LIMITE_REAGENDAMIENTO'
+        ? 'Ya usaste el reagendamiento automático disponible. Tu horario anterior quedó liberado; '
+          + 'nuestra recepcionista te escribirá por este chat para asignarte la nueva hora manualmente.'
+        : 'No pude confirmar el nuevo horario automáticamente 😕 Tu horario anterior quedó liberado; '
+          + 'recepción te escribirá por este chat para asignarte la nueva hora.';
+      await escalarCita(telefono, `Reagendamiento IA no completado (${err.code})`,
+        `cita anterior ${d.reagendaDe} · ${resumenPlano(d)} · ${slot.start}`, texto);
+      return 'error';
     }
     if (['MODULO_PREMIUM', 'BUSY_RETRY', 'INVALID_INPUT'].includes(err.code)) {
       // Respuestas en las que el servidor garantiza que NO creó la cita: derivar es seguro.
@@ -236,7 +370,7 @@ async function agendarAutomatico(telefono, sesion) {
   }
 
   await wa.enviarTexto(telefono,
-    `✅ ¡Cita agendada!\n📅 ${d.diaElegido.titulo} · ${hora(slot.start)}\n👨‍⚕️ ${slot.doctorName}\n🏥 ${d.especialidadNombre}\n\n`
+    `✅ ¡Cita ${d.reagendaDe ? 'reagendada' : 'agendada'}!\n📅 ${d.diaElegido.titulo} · ${hora(slot.start)}\n👨‍⚕️ ${slot.doctorName}\n🏥 ${d.especialidadNombre}\n\n`
     + 'Te enviaremos un recordatorio antes de la cita. Si necesitas cambiarla, escribe "asesor".');
   return 'ok';
 }
@@ -260,6 +394,11 @@ async function procesarMensaje(telefono, texto, idInteractivo) {
 
   switch (sesion.paso) {
         case 'inicio': {
+                // "Quiero cancelar mi cita" / "reagendar" escrito de entrada: directo a la gestión de la cita.
+      if (/\b(cancelar|anular|reagendar|reprogramar)\b/.test(entradaLower)) {
+        await iniciarGestionCita(telefono, sesion, true);
+        break;
+      }
       const h = estadoHorario();
       sesion.datos.modo = await modoAgendamiento();
       const automatico = sesion.datos.modo === 'automatico';
@@ -271,7 +410,7 @@ async function procesarMensaje(telefono, texto, idInteractivo) {
         + `${queHago}.${automatico ? '' : avisoFueraDeHorario(h)}\n\n¿Qué deseas hacer hoy?`,
         'Ver opciones', [
           { id: 'menu_agendar', title: automatico ? 'Agendar cita' : 'Solicitar cita' },
-          { id: 'menu_ver_cita', title: 'Ver/cancelar mi cita' },
+          { id: 'menu_ver_cita', title: 'Cancelar o reagendar' },
           { id: 'menu_asesor', title: 'Hablar con un asesor' },
         ]);
       sesion.paso = 'menu_principal';
@@ -287,7 +426,8 @@ async function procesarMensaje(telefono, texto, idInteractivo) {
           { id: 'esp_neurologia', title: 'Neurología' },
         ]);
         sesion.paso = 'especialidad';
-      } else if (entrada === 'menu_ver_cita') {
+       } else if (entrada === 'menu_ver_cita') {
+        await iniciarGestionCita(telefono, sesion);
         await wa.enviarTexto(telefono, 'Escribe el número de teléfono con el que agendaste (o escribe "este" para usar este número).');
         sesion.paso = 'ver_cita_telefono';
       } else if (entrada === 'menu_asesor') {
@@ -298,34 +438,27 @@ async function procesarMensaje(telefono, texto, idInteractivo) {
       }
       break;
 
-    // ---------------- Ver / cancelar cita ----------------
-    case 'ver_cita_telefono': {
-      const tel = entradaLower === 'este' ? telefono : entrada;
-      const citas = await db.citasFuturasPorTelefono(tel);
-      if (citas.length === 0) {
-        await wa.enviarTexto(telefono, 'No encontré citas próximas con ese número.');
+        // ---------------- Cancelar / reagendar cita ----------------
+    case 'ver_cita_accion': {
+      if (entrada === 'cita_dejar') {
+        await wa.enviarTexto(telefono, 'Perfecto, nos vemos en tu cita 🙌');
         terminar(sesion);
         break;
       }
-      const cita = citas[0];
-      sesion.datos.citaId = cita.id;
-      await wa.enviarBotones(telefono,
-        `Encontré esta cita:\n📅 ${fmt(cita.fecha_hora_inicio)}\n👨‍⚕️ ${cita.doctor_nombre}\n🏥 ${cita.especialidad_nombre}`,
-        [{ id: 'cita_cancelar', title: 'Cancelar' }, { id: 'cita_dejar', title: 'Dejarla así' }]
-      );
-      sesion.paso = 'ver_cita_accion';
+      const intencion = entrada === 'cita_reagendar' ? 'reagendar' : entrada === 'cita_cancelar' ? 'cancelar' : null;
+      if (!intencion) { await wa.enviarTexto(telefono, 'Usa los botones para elegir una opción.'); break; }
+      await gestionarCancelacion(telefono, sesion, intencion);
       break;
     }
-    case 'ver_cita_accion':
-      if (entrada === 'cita_cancelar') {
-        await db.cancelarCita(sesion.datos.citaId);
-        await wa.enviarTexto(telefono, 'Tu cita fue cancelada. El horario quedó libre para otro paciente.');
-      } else {
-        await wa.enviarTexto(telefono, 'Perfecto, nos vemos en tu cita 🙌');
-      }
-      terminar(sesion);
-      break;
 
+    case 'ofrecer_reagendar':
+      if (entrada === 'reag_si') {
+        await ofrecerDias(telefono, sesion); // sesion.datos ya trae reagendaDe y especialidad
+      } else {
+        await wa.enviarTexto(telefono, '¡Gracias por avisarnos! Cuando quieras una nueva cita, escríbenos. 🙌');
+        terminar(sesion);
+      }
+      break;
     // ---------------- Especialidad y datos clínicos ----------------
     case 'especialidad': {
       const mapa = { esp_eeg: 'eeg', esp_estetica: 'estetica', esp_pediatria: 'pediatria', esp_neurologia: 'neurologia' };
@@ -492,8 +625,7 @@ async function procesarMensaje(telefono, texto, idInteractivo) {
         : ((await derivarARecepcion(telefono, sesion.datos)) ? 'ok' : 'error');
 
       if (resultado === 'reintentar') break; // ya se ofrecieron días actualizados
-      if (resultado === 'ok' && sesion.datos.especialidad === 'neurologia' && !sesion.datos.seguimiento) {
-        await wa.enviarBotones(telefono, '¿Deseas también un electroencefalograma de seguimiento?',
+      if (resultado === 'ok' && sesion.datos.especialidad === 'neurologia' && !sesion.datos.seguimiento && !sesion.datos.reagendaDe) {        await wa.enviarBotones(telefono, '¿Deseas también un electroencefalograma de seguimiento?',
           [{ id: 'eeg_seguimiento_si', title: 'Sí, también EEG' }, { id: 'eeg_seguimiento_no', title: 'No, gracias' }]);
         sesion.paso = 'neuro_seguimiento';
       } else {

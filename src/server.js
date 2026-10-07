@@ -20,7 +20,8 @@ const { createVetModule, requireApiKey } = require('./modules/vet');
 const { createDerivacionesModule } = require('./modules/derivaciones');
 const { createPlanModule } = require('./modules/plan');
 const { citaManualRouter } = require('./routes/citaManual.routes');
-const dbSchema = process.env.DB_SCHEMA || 'public';
+const { createCancelacionesModule } = require('./modules/cancelaciones');
+const { createPgDerivacionesRepository } = require('./modules/derivaciones/infrastructure/pg-derivaciones-repository');const dbSchema = process.env.DB_SCHEMA || 'public';
 const { createImpactoIaModule, parsearTarifas } = require('./modules/impacto-ia');
 const { estadoHorario } = require('./horarioLaboral');
 // ---------------------------------------------------------------------------
@@ -98,6 +99,15 @@ const planModule = createPlanModule({
   schema: dbSchema,
   authorizeIniciarPrueba: requireRole('direccion'),
 });
+// Cancelación / reagendamiento autónomo del asistente (premium: agendamiento_ia).
+const cancelacionesModule = createCancelacionesModule({
+  getPool,
+  schema: dbSchema,
+  scheduler: vetModule.scheduler,
+  agendamientoIaHabilitado: async () => (await planModule.service.estado()).modulos.agendamiento_ia.habilitado,
+});
+// Solo lectura: distingue 409 (ocupado) de 422 (fuera de agenda) en el alta manual.
+const repoChoqueHorario = createPgDerivacionesRepository(getPool, { schema: dbSchema });
 // Tarjeta "Impacto del Agendamiento con IA" (Dirección).
 const { tarifas: tarifasConsulta, avisos: avisosTarifas } = parsearTarifas(
   process.env.TARIFAS_CONSULTA,
@@ -128,6 +138,7 @@ for (const [nombre, mw] of Object.entries({
   'planModule.router': planModule.router,
   'planModule.capacidadesIaRouter': planModule.capacidadesIaRouter,
   'impactoIaModule.router': impactoIaModule.router,
+  'cancelacionesModule.iaRouter': cancelacionesModule.iaRouter,
 })) {
   if (typeof mw !== 'function') throw new Error(`[server] ${nombre} no es un middleware (recibido: ${typeof mw})`);
 }
@@ -181,11 +192,16 @@ app.use(
   '/api/citas/manual',
   requireLogin,
   requireRole('recepcion', 'direccion'),
-  citaManualRouter({ scheduler: vetModule.scheduler, notifier: notificadorWhatsApp })
+  citaManualRouter({
+    scheduler: vetModule.scheduler,
+    notifier: notificadorWhatsApp,
+    horarioOcupado: (q) => repoChoqueHorario.horarioOcupado(q),
+  })
 );
 // Métrica comercial: solo Dirección. Solo conteos, sin datos de pacientes.
 app.use('/api/impacto-ia', requireLogin, requireRole('direccion'), impactoIaModule.router);
-
+// Cancelar / reagendar desde WhatsApp. La política (plan, 48 h, límite 1) se decide aquí, no en el bot.
+app.use('/api/ia/citas', iaApiKey, cancelacionesModule.iaRouter);
 // Catch-all del panel: SIEMPRE al final de las rutas /api.
 app.use('/api', requireLogin, adminApiRoutes);
 
