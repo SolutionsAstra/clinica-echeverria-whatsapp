@@ -1,15 +1,38 @@
-import { useState } from "react";
-import AdminDashboard from "./components/dashboard/AdminDashboard";
-import LoginForm from "./components/dashboard/LoginForm";
+import React, { useState, useEffect } from 'react';
+import LoginForm from './components/dashboard/LoginForm';
+import AdminDashboard from './components/dashboard/AdminDashboard';
+import LimiteErrores from './components/dashboard/ui/LimiteErrores';
 
-/**
- * Sin sesión → pantalla de acceso. Con sesión → panel unificado.
- * Los datos los carga cada sección contra el backend real: aquí ya no hay datos de demostración.
- */
 export default function App() {
   const [usuario, setUsuario] = useState(null);
+  const [cargando, setCargando] = useState(true);
 
-  if (!usuario) return <LoginForm onLoginSuccess={setUsuario} />;
+  useEffect(() => {
+    // Verificar si el operador ya tiene una sesión abierta en Express
+    fetch('/api/auth/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) setUsuario(data);
+        setCargando(false);
+      })
+      .catch(() => setCargando(false));
+  }, []);
 
-  return <AdminDashboard usuarioInicial={usuario} onSesionCerrada={() => setUsuario(null)} />;
+  if (cargando) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#0B192C] font-mono text-xs text-[#7D8BA0]">
+        SINCRO CORING INFRASTRUCTURE...
+      </div>
+    );
+  }
+
+  if (!usuario) {
+    return <LoginForm onLoginSuccess={(usr) => setUsuario(usr)} />;
+  }
+
+  return (
+    <LimiteErrores>
+      <AdminDashboard usuarioActual={usuario} onLogout={() => setUsuario(null)} />
+    </LimiteErrores>
+  );
 }

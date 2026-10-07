@@ -98,20 +98,111 @@ export interface Usuario {
 // ---------------- Conexión ----------------
 const HOST_DIRECTO_SUPABASE = /^db\.([a-z0-9]+)\.supabase\.co$/i;
 
+// ---------------- TLS (certificado de Supabase) ----------------
+
+/**
+ * Raíz del proyecto = primera carpeta hacia arriba desde este archivo que contiene package.json.
+ * No se asume "un nivel arriba": según tsconfig, el compilado puede quedar en dist/ o en dist/src/.
+ */
+function raizDelProyecto(): string {
+  let dir = __dirname;
+  for (;;) {
+    if (fs.existsSync(path.join(dir, "package.json"))) return dir;
+    const padre = path.dirname(dir);
+    if (padre === dir) return path.resolve(__dirname, ".."); // sin package.json: comportamiento anterior
+    dir = padre;
+  }
+}
+
+/**
+ * Normaliza el valor leído de .env:
+ *  - quita comillas sobrantes ('…' o "…");
+ *  - acepta "/" y "\" en cualquier sistema (en Linux/macOS "\" se convierte a "/");
+ *  - detecta saltos de línea o tabulaciones: dotenv expande \n dentro de comillas DOBLES,
+ *    así que "C:\Users\nadia\certs" llega roto.
+ */
+function limpiarRutaCa(valor: string): string {
+  const sinComillas = valor.trim().replace(/^(['"])(.*)\1$/s, "$2").trim();
+  if (/[\r\n\t]/.test(sinComillas)) {
+    throw new Error(
+      "[db] DB_SSL_CA_PATH contiene un salto de línea o tabulación: en .env, una ruta de Windows entre comillas " +
+        'DOBLES convierte "\\n" o "\\t" en caracteres especiales. Usa barras normales (C:/ruta/cert.crt), ' +
+        "comillas simples, o una ruta relativa como ./certs/supabase-prod-ca.crt.",
+    );
+  }
+  const separadores = process.platform === "win32" ? sinComillas : sinComillas.replace(/\\/g, "/");
+  return path.normalize(separadores);
+}
+
+/** Rutas donde se busca el certificado: absoluta tal cual; relativa → raíz del proyecto y luego el cwd. */
+function rutasCandidatasCa(caPath: string): string[] {
+  if (path.isAbsolute(caPath)) return [caPath];
+  const desdeRaiz = path.resolve(raizDelProyecto(), caPath);
+  const desdeCwd = path.resolve(process.cwd(), caPath);
+  return desdeRaiz === desdeCwd ? [desdeRaiz] : [desdeRaiz, desdeCwd];
+}
+
+const esArchivo = (ruta: string): boolean => {
+  try {
+    return fs.statSync(ruta).isFile();
+  } catch {
+    return false;
+  }
+};
+
+/** Qué certificados hay de verdad en la carpeta esperada (para detectar nombre o extensión distintos). */
+function describirCarpetaCa(carpeta: string): string {
+  try {
+    const certificados = fs.readdirSync(carpeta).filter((f) => /\.(crt|pem|cer)(\.[a-z0-9]+)?$/i.test(f));
+    return certificados.length
+      ? `En ${carpeta} hay: ${certificados.join(", ")}.`
+      : `La carpeta ${carpeta} existe pero no contiene archivos .crt, .pem ni .cer.`;
+  } catch {
+    return `La carpeta ${carpeta} NO existe.`;
+  }
+}
+
+function leerCertificadoCa(valor: string): string {
+  const caPath = limpiarRutaCa(valor);
+  const probadas = rutasCandidatasCa(caPath);
+  const encontrada = probadas.find(esArchivo);
+
+  if (!encontrada) {
+    throw Object.assign(
+      new Error(
+        [
+          `[db] No se encontró el certificado de DB_SSL_CA_PATH ("${valor.trim()}").`,
+          "  Rutas probadas:",
+          ...probadas.map((p) => `    - ${p}`),
+          `  ${describirCarpetaCa(path.dirname(probadas[0]))}`,
+          '  Supabase lo descarga como "prod-ca-2021.crt": renómbralo o ajusta DB_SSL_CA_PATH al nombre real.',
+          '  En Windows, activa "Extensiones de nombre de archivo" en el Explorador para ver la extensión verdadera.',
+        ].join("\n"),
+      ),
+      { code: "ENOENT" },
+    );
+  }
+
+  const pem = fs.readFileSync(encontrada, "utf8");
+  if (!pem.includes("-----BEGIN CERTIFICATE-----")) {
+    throw new Error(
+      `[db] ${encontrada} existe pero no es un certificado PEM (falta "-----BEGIN CERTIFICATE-----"). ` +
+        "Descárgalo de nuevo desde Supabase → Database → SSL Configuration → Download certificate, " +
+        "sin abrirlo ni convertirlo con el visor de certificados de Windows.",
+    );
+  }
+  return pem;
+}
+
 function sslConfig(): PoolConfig["ssl"] {
   if (process.env.DB_SSL === "false") return false; // Postgres local sin TLS
-  const caPath = process.env.DB_SSL_CA_PATH?.trim();
-  if (caPath) {
-    // Relativa a la raíz del proyecto (src/ y dist/ están un nivel abajo), no al cwd.
-    const absoluta = path.isAbsolute(caPath) ? caPath : path.resolve(__dirname, "..", caPath);
-    if (!fs.existsSync(absoluta)) {
-      throw new Error(
-        `[db] DB_SSL_CA_PATH apunta a ${absoluta}, que no existe. Descarga el certificado ` +
-          "(Supabase → Database → SSL Configuration) a esa ruta, o quita la variable en desarrollo.",
-      );
-    }
-    return { ca: fs.readFileSync(absoluta, "utf8"), rejectUnauthorized: true };
+
+  const valor = process.env.DB_SSL_CA_PATH;
+  if (valor && valor.trim()) {
+    // Verificación completa: si el certificado no se puede leer, NO se conecta (sin degradar a modo inseguro).
+    return { ca: leerCertificadoCa(valor), rejectUnauthorized: true };
   }
+
   console.warn(
     "[db] DB_SSL_CA_PATH no está definido: la conexión va cifrada pero sin verificar el certificado del servidor. " +
       "Descarga el certificado de Supabase y define DB_SSL_CA_PATH antes de producción.",
@@ -120,6 +211,12 @@ function sslConfig(): PoolConfig["ssl"] {
 }
 
 function normalizarConnectionString(raw: string): string {
+    if (/<[^>]+>|\[YOUR-PASSWORD\]/i.test(raw)) {
+    throw new Error(
+      "[db] DATABASE_URL todavía tiene marcadores de plantilla (<ref>, <password> o [YOUR-PASSWORD]). " +
+        "Copia la cadena real desde Supabase → Connect → Session pooler y pon tu contraseña.",
+    );
+  }
   let url: URL;
   try {
     url = new URL(raw);
@@ -145,8 +242,11 @@ function normalizarConnectionString(raw: string): string {
 
 function pistaConexion(err: unknown): string | null {
   const e = (err ?? {}) as { code?: string; message?: string };
-  if (/Tenant or user not found/i.test(e.message ?? "")) {
-    return "El pooler no reconoce el usuario: debe ser postgres.<ref>, no solo postgres.";
+    if (/tenant(?:\/| or )user\b.*not found/i.test(e.message ?? "")) {
+    return (
+      "El pooler no reconoce el usuario. Debe ser postgres.<ref-real-del-proyecto> y el host debe ser EXACTAMENTE " +
+      "el de Supabase → Connect → Session pooler (la región y el prefijo aws-0/aws-1 deben coincidir)."
+    );
   }
   switch (e.code) {
     case "ENETUNREACH":

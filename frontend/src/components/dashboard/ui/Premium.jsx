@@ -36,25 +36,26 @@ export function EnlaceAstra() {
   );
 }
 
-export function PanelPremium({ titulo, mensaje, vistaPrevia, children }) {
+export function PanelPremium({ titulo, mensaje, detalle = null, vistaPrevia, children }) {
   const tituloId = useId();
   return (
     <section
       aria-labelledby={tituloId}
-      className="relative isolate min-h-[30rem] overflow-hidden rounded-[10px] border border-[#1A2D48]"
+      className="relative isolate grid min-h-[30rem] overflow-hidden rounded-[10px] border border-[#1A2D48]"
     >
       {/* Lo que el módulo ofrece, atenuado e inerte: muestra la forma, no datos. */}
-      <div aria-hidden inert className="pointer-events-none select-none opacity-40 blur-[2px]">
+      <div aria-hidden inert className="pointer-events-none select-none opacity-40 blur-[2px] [grid-area:1/1]">
         {vistaPrevia}
       </div>
 
-      <div className="absolute inset-0 flex items-center justify-center p-5">
-        <div className="w-full max-w-lg rounded-xl border border-[#243B5A] bg-[#0E1F36]/85 p-8 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.7)] backdrop-blur-xl sm:p-10">
+      <div className="flex items-center justify-center p-5 [grid-area:1/1]">
+        <div className="w-full max-w-xl rounded-xl border border-[#243B5A] bg-[#0E1F36]/85 p-8 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.7)] backdrop-blur-xl sm:p-10">
           <SelloCandado />
           <h2 id={tituloId} className="mt-6 text-lg font-semibold tracking-tight text-[#F2F4F7]">
             {titulo}
           </h2>
           <p className="mt-3 text-[15px] leading-relaxed text-[#C7CCD3]">{mensaje}</p>
+          {detalle && <div className="mt-6">{detalle}</div>}
           {children && <div className="mt-8 flex flex-wrap items-center gap-3">{children}</div>}
         </div>
       </div>

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   DIAS_PRUEBA,
+  DIAS_PRUEBA_POR_MODULO,
   calcularEstadoPlan,
   crearPrueba,
   esErrorLimiteBd,
@@ -159,4 +160,9 @@ test("agendamiento_ia contratado no ofrece prueba", () => {
     () => crearPrueba("agendamiento_ia", { ...BASE, modulos: ["agendamiento_ia"] }, [], AHORA),
     (e: unknown) => isPlanError(e) && e.code === "PRUEBA_NO_DISPONIBLE",
   );
+});
+test("crearPrueba: días exactos del módulo, una sola vez y solo para módulos que la ofrecen", () => {
+  const p = crearPrueba("reportes", BASE, [], AHORA);
+  assert.equal(p.expiraEn.getTime() - p.iniciadaEn.getTime(), (DIAS_PRUEBA_POR_MODULO.reportes ?? 0) * DIA);
+  // … el resto de la prueba queda igual
 });

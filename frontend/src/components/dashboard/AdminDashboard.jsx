@@ -34,6 +34,7 @@ import EscaladasView from "./vistas/EscaladasView";
 import ReportesView from "./vistas/ReportesView";
 import ResumenView from "./vistas/ResumenView";
 import UsuariosView from "./vistas/UsuariosView";
+import LimiteErrores from './ui/LimiteErrores';
 
 const TODOS = ["recepcion", "direccion", "doctor"];
 const OPERACION = ["recepcion", "direccion"];
@@ -225,7 +226,9 @@ export default function AdminDashboard({ usuarioInicial, onSesionCerrada }) {
         </aside>
 
         <main id="principal" ref={principal} tabIndex={-1} className="min-w-0 outline-none xl:h-dvh xl:overflow-y-auto">
-          {contenido}
+          <LimiteErrores key={vistaActiva}>
+            {contenido}
+          </LimiteErrores>
         </main>
       </div>
     </div>

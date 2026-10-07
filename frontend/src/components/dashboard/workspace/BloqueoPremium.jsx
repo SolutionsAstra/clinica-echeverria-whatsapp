@@ -107,6 +107,7 @@ export function AccionPrueba({ modulo, rol, pruebaDisponible = null, diasPrueba 
 export default function BloqueoPremium({
   titulo,
   mensaje,
+  detalle = null,
   modulo,
   rol,
   pruebaDisponible = null,
@@ -115,8 +116,7 @@ export default function BloqueoPremium({
   onActivada,
 }) {
   return (
-    <PanelPremium titulo={titulo} mensaje={mensaje} vistaPrevia={vistaPrevia}>
-      <AccionPrueba
+    <PanelPremium titulo={titulo} mensaje={mensaje} detalle={detalle} vistaPrevia={vistaPrevia}>      <AccionPrueba
         modulo={modulo}
         rol={rol}
         pruebaDisponible={pruebaDisponible}

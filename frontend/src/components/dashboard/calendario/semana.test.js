@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  MAX_CARRILES,
   derivacionesEnEspera,
   diasVisibles,
   lunesDe,
@@ -122,4 +123,76 @@ test("maquetarSemana con doctorId null (vista unificada) incluye a todos los doc
   const martes = m.columnas.find((c) => c.dia === "2026-09-29");
   assert.equal(martes.bloques.length, 2);
   assert.equal(martes.bloques[0].carriles, 2);
+});
+/** Invariantes geométricas que CalendarioDoctor necesita para no romperse. */
+function verificarGeometria(columnas) {
+  for (const col of columnas) {
+    for (const b of [...col.bloques, ...col.excedentes]) {
+      assert.ok(Number.isInteger(b.carriles) && b.carriles >= 1 && b.carriles <= MAX_CARRILES, `carriles inválidos en ${b.id}`);
+      assert.ok(Number.isInteger(b.carril) && b.carril >= 0 && b.carril < b.carriles, `carril fuera de rango en ${b.id}`);
+      assert.ok(b.inicioMin >= 0 && b.finMin <= 24 * 60 && b.finMin > b.inicioMin, `franja inválida en ${b.id}`);
+    }
+  }
+}
+
+test("500 citas de Estética solapadas fuera de horario: carriles acotados y '+N' con el resto", () => {
+  // 22:00–22:45 en Caracas del martes 29 = 02:00Z del miércoles 30.
+  const citas = Array.from({ length: 500 }, (_, i) =>
+    cita(i + 1, "2026-09-30T02:00:00Z", "2026-09-30T02:45:00Z", { especialidad_codigo: "estetica" }),
+  );
+  const m = maquetarSemana(citas, { doctorId: 1, lunes: "2026-09-28" });
+  const martes = m.columnas.find((c) => c.dia === "2026-09-29");
+  verificarGeometria(m.columnas);
+  assert.equal(martes.bloques.length, MAX_CARRILES - 1);
+  assert.equal(martes.excedentes.length, 1);
+  assert.equal(martes.excedentes[0].cantidad, 500 - (MAX_CARRILES - 1));
+  assert.equal(m.finMin, 23 * 60);
+});
+
+test("citas consecutivas que se tocan no se apilan, aunque sean muchas", () => {
+  // Desde las 18:00 de Caracas (22:00Z), 45 min cada una, una tras otra hasta las 22:30.
+  const base = Date.parse("2026-09-29T22:00:00Z");
+  const iso = (n) => new Date(base + n * 45 * 60_000).toISOString();
+  const citas = Array.from({ length: 6 }, (_, i) => cita(i + 1, iso(i), iso(i + 1), { especialidad_codigo: "estetica" }));
+  const m = maquetarSemana(citas, { doctorId: 1, lunes: "2026-09-28" });
+  const martes = m.columnas.find((c) => c.dia === "2026-09-29");
+  verificarGeometria(m.columnas);
+  assert.equal(martes.bloques.length, 6);
+  assert.ok(martes.bloques.every((b) => b.carril === 0 && b.carriles === 1));
+  assert.equal(martes.excedentes.length, 0);
+});
+
+test("una cita que cruza la medianoche se recorta a 24:00 sin altura negativa", () => {
+  // 23:30 → 00:15 en Caracas.
+  const m = maquetarSemana(
+    [cita(1, "2026-09-30T03:30:00Z", "2026-09-30T04:15:00Z", { especialidad_codigo: "estetica" })],
+    { doctorId: 1, lunes: "2026-09-28" },
+  );
+  const b = m.columnas.find((c) => c.dia === "2026-09-29").bloques[0];
+  assert.deepEqual([b.inicioMin, b.finMin], [23 * 60 + 30, 24 * 60]);
+  assert.equal(m.finMin, 24 * 60);
+  verificarGeometria(m.columnas);
+});
+
+test("ids repetidos o de texto y fines inválidos no rompen el reparto", () => {
+  const citas = [
+    cita("a-2", "2026-09-29T12:00:00Z", "2026-09-29T13:00:00Z"),
+    cita("a-10", "2026-09-29T12:00:00Z", "2026-09-29T13:00:00Z"),
+    cita("a-10", "2026-09-29T12:00:00Z", "2026-09-29T13:00:00Z"), // repetida en la respuesta
+    cita(7, "2026-09-29T12:00:00Z", null), // sin fin
+    cita(8, "2026-09-29T12:00:00Z", "2026-09-29T11:00:00Z"), // fin antes del inicio
+  ];
+  const m = maquetarSemana(citas, { doctorId: 1, lunes: "2026-09-28" });
+  const martes = m.columnas.find((c) => c.dia === "2026-09-29");
+  assert.equal(m.duplicadas, 1);
+  const dibujadas = martes.bloques.length + martes.excedentes.reduce((n, x) => n + x.cantidad, 0);
+  assert.equal(dibujadas, 4);
+  assert.equal(new Set(martes.bloques.map((b) => String(b.id))).size, martes.bloques.length); // claves únicas
+  verificarGeometria(m.columnas);
+});
+
+test("especialidad nula o desconocida no rompe el resumen de la leyenda", () => {
+  assert.doesNotThrow(() =>
+    resumenPorEspecialidad([{ especialidad: null }, { especialidad: "estetica" }, { especialidad: undefined }]),
+  );
 });

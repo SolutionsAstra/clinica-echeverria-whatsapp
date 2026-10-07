@@ -1,9 +1,12 @@
 import { calcularVentanas, resumir, type DerivacionMetrica, type Fuente, type PruebaFechas, type Resumen, type Ventana } from "../domain/impacto";
+import { calcularPremium, TARIFAS_VACIAS, type CitaMetrica, type MetricasPremium, type Tarifas } from "../domain/premium";
 
 export interface ImpactoRepository {
   /** creado_en de citas con origen 'ia' no canceladas, en [desde, hasta). */
   citasIa(desde: Date, hasta: Date): Promise<Date[]>;
   derivaciones(desde: Date, hasta: Date): Promise<DerivacionMetrica[]>;
+  /** Citas creadas o con inicio en [desde, hasta), para las métricas premium de Reportes. */
+  citasPeriodo?(desde: Date, hasta: Date): Promise<CitaMetrica[]>;
 }
 
 export interface EstadoModuloIa {
@@ -13,6 +16,15 @@ export interface EstadoModuloIa {
 }
 
 export type ResumenVentana = Resumen & { desde: string; hasta: string };
+export type MetricasPremiumVentana = MetricasPremium & { desde: string; hasta: string };
+
+/** Métricas de Reportes: últimos 7 días contra los 7 anteriores. null = módulo Reportes cerrado. */
+export interface PremiumDto {
+  moneda: string;
+  tarifasConfiguradas: boolean;
+  actual: MetricasPremiumVentana;
+  anterior: MetricasPremiumVentana;
+}
 
 /** Contrato EXACTO de GET /api/impacto-ia. */
 export interface ImpactoIaDto {
@@ -21,6 +33,7 @@ export interface ImpactoIaDto {
   modulo: EstadoModuloIa;
   actual: ResumenVentana;
   anterior: ResumenVentana;
+  premium: PremiumDto | null;
 }
 
 export interface ImpactoIaService {
@@ -35,26 +48,60 @@ export function createImpactoIaService(deps: {
   estadoModulo: () => Promise<EstadoModuloIa>;
   /** Misma regla que el bot: !estadoHorario(fecha).dentroDeHorario (America/Caracas + FERIADOS). */
   esFueraDeHorario: (fecha: Date) => boolean;
+  /** Módulo Reportes contratado o en prueba. Sin esta dependencia, premium = null. */
+  reportesHabilitado?: () => Promise<boolean>;
+  tarifas?: Tarifas;
   reloj?: () => Date;
 }): ImpactoIaService {
   const reloj = deps.reloj ?? (() => new Date());
+  const tarifas = deps.tarifas ?? TARIFAS_VACIAS;
+  const repo = deps.repository;
+
+  const premiumDisponible = async () =>
+    typeof repo.citasPeriodo === "function" && deps.reportesHabilitado ? Boolean(await deps.reportesHabilitado()) : false;
 
   return {
     async resumen() {
       const ahora = reloj();
-      const [prueba, modulo] = await Promise.all([deps.pruebaAgendamiento(), deps.estadoModulo()]);
+      const [prueba, modulo, conPremium] = await Promise.all([deps.pruebaAgendamiento(), deps.estadoModulo(), premiumDisponible()]);
       const v = calcularVentanas(prueba, ahora);
-      // Una consulta por tabla para ambos periodos; se reparte en memoria.
-      const [citas, derivaciones] = await Promise.all([
-        deps.repository.citasIa(v.anterior.desde, v.actual.hasta),
-        deps.repository.derivaciones(v.anterior.desde, v.actual.hasta),
+      const r = conPremium ? calcularVentanas(null, ahora) : null;
+
+      // Un rango que cubre todas las ventanas: una consulta por tabla, repartida en memoria.
+      const desde = new Date(Math.min(v.anterior.desde.getTime(), r ? r.anterior.desde.getTime() : Infinity));
+      const hasta = new Date(Math.max(v.actual.hasta.getTime(), r ? r.actual.hasta.getTime() : -Infinity));
+      const [citas, derivaciones, citasPeriodo] = await Promise.all([
+        repo.citasIa(desde, hasta),
+        repo.derivaciones(desde, hasta),
+        r && repo.citasPeriodo ? repo.citasPeriodo(desde, hasta) : Promise.resolve([] as CitaMetrica[]),
       ]);
+
       const dto = (w: Ventana): ResumenVentana => ({
         desde: w.desde.toISOString(),
         hasta: w.hasta.toISOString(),
         ...resumir(w, citas, derivaciones, deps.esFueraDeHorario),
       });
-      return { fuente: v.fuente, pruebaVigente: v.pruebaVigente, modulo, actual: dto(v.actual), anterior: dto(v.anterior) };
+      const premium = (w: Ventana): MetricasPremiumVentana => ({
+        desde: w.desde.toISOString(),
+        hasta: w.hasta.toISOString(),
+        ...calcularPremium(w, ahora, citasPeriodo, derivaciones, deps.esFueraDeHorario, tarifas),
+      });
+
+      return {
+        fuente: v.fuente,
+        pruebaVigente: v.pruebaVigente,
+        modulo,
+        actual: dto(v.actual),
+        anterior: dto(v.anterior),
+        premium: r
+          ? {
+              moneda: tarifas.moneda,
+              tarifasConfiguradas: Object.keys(tarifas.porEspecialidad).length > 0,
+              actual: premium(r.actual),
+              anterior: premium(r.anterior),
+            }
+          : null,
+      };
     },
   };
 }

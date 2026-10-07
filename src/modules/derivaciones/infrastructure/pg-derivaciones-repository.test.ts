@@ -31,13 +31,14 @@ const DB_ROW = {
   capturada_en: new Date("2026-09-28T13:00:00Z"),
 };
 
-test("listarPendientes: ordena de la más antigua a la más reciente e incluye reclamos vencidos", async () => {
-  const { calls, getPool } = fakePool(() => ({ rows: [DB_ROW] }));
+test("listarPendientes: lee d.*, incluye reclamos vencidos y ordena de la más antigua a la más reciente", async () => {
+  const posterior = { ...DB_ROW, id: 1050, capturada_en: new Date("2026-09-28T14:00:00Z") };
+  const { calls, getPool } = fakePool(() => ({ rows: [posterior, DB_ROW] }));
   const rows = await createPgDerivacionesRepository(getPool).listarPendientes();
-  assert.match(calls[0].text, /ORDER BY d\.capturada_en ASC, d\.id ASC/);
+  assert.match(calls[0].text, /SELECT d\.\*, doc\.nombre AS doctor_nombre/);
   assert.match(calls[0].text, /d\.estado = 'pendiente' OR \(d\.estado = 'en_proceso' AND d\.reclamada_en < now\(\) - make_interval\(secs => \$1\)\)/);
-  assert.match(calls[0].text, /to_char\(d\.fecha_preferida, 'YYYY-MM-DD'\)/);
   assert.deepEqual(calls[0].params, [RECLAMO_EXPIRA_SEG]);
+  assert.deepEqual(rows.map((r) => r.id), [1041, 1050]);
   assert.deepEqual(rows[0], {
     id: 1041,
     telefono: "584141234567",
@@ -51,6 +52,19 @@ test("listarPendientes: ordena de la más antigua a la más reciente e incluye r
     notas: null,
     capturadaEn: new Date("2026-09-28T13:00:00Z"),
   });
+});
+
+test("acepta columnas alternativas (nombre_paciente, created_at) y fechas como Date o texto", async () => {
+  const alternativa = {
+    id: 7, telefono: "584141234567", nombre_paciente: "Luis Carrillo", nombre_acudiente: null,
+    especialidad: "eeg", doctor_id: 5, doctor_nombre: "Dra. Méndez", bloque: "tarde",
+    fecha_preferida: new Date(2026, 8, 30), notas: null, created_at: "2026-09-28T15:00:00.000Z",
+  };
+  const { getPool } = fakePool(() => ({ rows: [alternativa] }));
+  const [r] = await createPgDerivacionesRepository(getPool).listarPendientes();
+  assert.equal(r.pacienteNombre, "Luis Carrillo");
+  assert.equal(r.fechaPreferida, "2026-09-30");
+  assert.equal(r.capturadaEn.toISOString(), "2026-09-28T15:00:00.000Z");
 });
 
 test("filas con especialidad o bloque desconocidos se descartan en vez de romper la bandeja", async () => {

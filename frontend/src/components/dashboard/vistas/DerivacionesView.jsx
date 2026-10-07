@@ -9,7 +9,6 @@
  */
 import { useMemo } from "react";
 import { textoDeError } from "../../../api/panel";
-import { MENSAJES, MODULO, esBloqueoPremium, estadoModulo } from "../plan/plan";
 import { ContenedorVista, EncabezadoVista } from "../ui/Vista";
 import AgendaAlertsPanel from "../workspace/AgendaAlertsPanel";
 import BloqueoPremium from "../workspace/BloqueoPremium";

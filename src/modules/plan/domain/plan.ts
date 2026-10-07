@@ -14,7 +14,7 @@ export type Modulo = (typeof MODULOS)[number];
  * (incluido un fin de semana) de citas confirmadas por la IA contra el modo derivación.
  */
 export const DIAS_PRUEBA_POR_MODULO: Readonly<Partial<Record<Modulo, number>>> = Object.freeze({
-  reportes: 3,
+  reportes: 7,
   agendamiento_ia: 7,
 });
 

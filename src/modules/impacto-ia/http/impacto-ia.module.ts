@@ -4,6 +4,7 @@ import { createImpactoIaService, type EstadoModuloIa, type ImpactoIaService } fr
 import { createPgImpactoRepository } from "../infrastructure/pg-impacto-repository";
 import { impactoIaRouter } from "../http/impacto.router";
 import type { PruebaFechas } from "../domain/impacto";
+import type { Tarifas } from "../domain/premium";
 
 export interface ImpactoIaModuleDeps {
   getPool: () => Promise<Pool>;
@@ -11,6 +12,9 @@ export interface ImpactoIaModuleDeps {
   pruebaAgendamiento: () => Promise<PruebaFechas | null>;
   estadoModulo: () => Promise<EstadoModuloIa>;
   esFueraDeHorario: (fecha: Date) => boolean;
+  /** Reportes contratado o en prueba: habilita `premium` en GET /api/impacto-ia. */
+  reportesHabilitado?: () => Promise<boolean>;
+  tarifas?: Tarifas;
 }
 
 export interface ImpactoIaModule {
@@ -24,6 +28,8 @@ export function createImpactoIaModule(deps: ImpactoIaModuleDeps): ImpactoIaModul
     pruebaAgendamiento: deps.pruebaAgendamiento,
     estadoModulo: deps.estadoModulo,
     esFueraDeHorario: deps.esFueraDeHorario,
+    reportesHabilitado: deps.reportesHabilitado,
+    tarifas: deps.tarifas,
   });
   return { service, router: impactoIaRouter(service) };
 }

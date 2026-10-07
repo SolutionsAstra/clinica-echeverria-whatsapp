@@ -1,7 +1,15 @@
-require('dotenv').config();
+// Carga .env desde la RAÍZ del proyecto, sin depender de la carpeta desde donde se lance node
+// (terminal, launch.json de VS Code, npm scripts o dist/). __dirname = src/ en desarrollo y dist/ compilado.
+// Debe seguir siendo lo PRIMERO del archivo: whatsapp.js y los clientes de integrations/ leen
+// process.env al hacer require.
+const path = require('path');
+const RUTA_ENV = path.resolve(__dirname, '..', '.env');
+const dotenvResultado = require('dotenv').config({ path: RUTA_ENV });
+if (dotenvResultado.error) {
+  console.warn(`[server] No se encontró ${RUTA_ENV}; se usarán solo las variables del entorno del sistema.`);
+}
 const express = require('express');
 const session = require('express-session');
-const path = require('path');
 const webhookRoutes = require('./routes/webhook');
 const { authRouter } = require('./routes/auth.routes');
 const adminApiRoutes = require('./routes/adminApi');
@@ -13,7 +21,7 @@ const { createDerivacionesModule } = require('./modules/derivaciones');
 const { createPlanModule } = require('./modules/plan');
 const { citaManualRouter } = require('./routes/citaManual.routes');
 const dbSchema = process.env.DB_SCHEMA || 'public';
-const { createImpactoIaModule } = require('./modules/impacto-ia');
+const { createImpactoIaModule, parsearTarifas } = require('./modules/impacto-ia');
 const { estadoHorario } = require('./horarioLaboral');
 // ---------------------------------------------------------------------------
 // Adaptador del puerto Notifier (src/modules/derivaciones/application/ports.ts)
@@ -45,7 +53,36 @@ function crearNotifierWhatsApp(cliente) {
 const notificadorWhatsApp = crearNotifierWhatsApp(wa);
 
 // Una sola instancia del middleware de API key: valida la clave una vez al arrancar.
-const iaApiKey = requireApiKey(process.env.VET_API_KEY);
+// ---------------------------------------------------------------------------
+// Clave servicio-a-servicio del Asistente de WhatsApp (header x-api-key).
+// Se valida AL ARRANCAR: el servidor no debe levantar con las rutas de IA abiertas o con una clave
+// débil. Este bloque solo cambia el mensaje de error, que ahora indica la causa exacta.
+// ---------------------------------------------------------------------------
+const LARGO_MINIMO_API_KEY = 24; // mismo mínimo que src/modules/vet/http/api-key.middleware.ts
+
+function leerApiKeyIa() {
+  const valor = process.env.VET_API_KEY;
+  // Los espacios al inicio o al final se rechazan: HTTP los recorta del header, la comparación
+  // fallaría siempre y el asistente recibiría 401 sin una causa visible.
+  if (typeof valor === 'string' && valor.length >= LARGO_MINIMO_API_KEY && valor === valor.trim()) {
+    return valor;
+  }
+
+  let causa;
+  if (valor === undefined) causa = 'la variable no existe en el entorno';
+  else if (valor.length === 0) causa = 'la variable existe pero está VACÍA (¿hay otra línea "VET_API_KEY=" más abajo en .env, o la define vacía la terminal o launch.json?)';
+  else if (valor !== valor.trim()) causa = 'tiene espacios o saltos de línea al inicio o al final';
+  else causa = `tiene solo ${valor.length} caracteres`;
+
+  throw new Error([
+    `[server] VET_API_KEY inválida: ${causa}. Se requieren al menos ${LARGO_MINIMO_API_KEY} caracteres.`,
+    `  Archivo .env esperado: ${RUTA_ENV}${dotenvResultado.error ? '  ← NO ENCONTRADO' : ''}`,
+    `  Genera una clave con: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`,
+  ].join('\n'));
+}
+
+// Una sola instancia del middleware para todas las rutas del asistente.
+const iaApiKey = requireApiKey(leerApiKeyIa());
 
 const vetModule = createVetModule({ getPool, schema: dbSchema });
 const derivacionesModule = createDerivacionesModule({
@@ -62,6 +99,11 @@ const planModule = createPlanModule({
   authorizeIniciarPrueba: requireRole('direccion'),
 });
 // Tarjeta "Impacto del Agendamiento con IA" (Dirección).
+const { tarifas: tarifasConsulta, avisos: avisosTarifas } = parsearTarifas(
+  process.env.TARIFAS_CONSULTA,
+  process.env.MONEDA_TARIFAS,
+);
+avisosTarifas.forEach((a) => console.warn('[impacto-ia]', a));
 const impactoIaModule = createImpactoIaModule({
   getPool,
   schema: dbSchema,
@@ -70,6 +112,9 @@ const impactoIaModule = createImpactoIaModule({
     const m = (await planModule.service.estado()).modulos.agendamiento_ia;
     return { habilitado: m.habilitado, origen: m.origen, pruebaExpiraEn: m.pruebaExpiraEn };
   },
+  // Métricas premium de Reportes: solo con el módulo contratado o en prueba (lo decide el servidor).
+  reportesHabilitado: async () => (await planModule.service.estado()).modulos.reportes.habilitado,
+  tarifas: tarifasConsulta,
   // Misma regla horaria que el bot (America/Caracas + FERIADOS): una sola fuente de verdad.
   esFueraDeHorario: (fecha) => !estadoHorario(fecha).dentroDeHorario,
 });
@@ -114,39 +159,33 @@ app.use('/webhook', webhookRoutes);
 // Login/logout — públicos, es lo que permite entrar
 app.use('/api/auth', authRouter);
 
-// Servicios para el Asistente de WhatsApp: API key, sin sesión.
-// DEBEN ir antes de cualquier app.use('/api', requireLogin, ...) o el asistente recibe 401.
-// ──► RUTA HUMANA: Panel administrativo protegido con sesión de Express
-app.use('/api/derivaciones', requireLogin, derivacionesModule.router);
+// ── RUTAS DEL ASISTENTE DE WHATSAPP: x-api-key, sin sesión ─────────────────────────────
+// DEBEN ir antes de app.use('/api', requireLogin, ...) o el asistente recibe 401.
+// Todas usan la MISMA instancia iaApiKey.
+app.use('/api/ia/capacidades', iaApiKey, planModule.capacidadesIaRouter);
+app.use('/api/ia/derivaciones', iaApiKey, derivacionesModule.iaRouter);
 // Agendamiento automático = módulo premium (contrato o prueba de 7 días vigente).
-// La barrera vive en el servidor: sin el módulo, POST /api/vet/citas responde
-// 403 { error: 'MODULO_PREMIUM', modulo: 'agendamiento_ia' } aunque el bot lo intente.
+// Sin el módulo, POST /api/vet/citas responde 403 { error: 'MODULO_PREMIUM' } aunque el bot lo intente.
 // GET /api/vet/disponibilidad queda abierto porque el modo derivación también lo usa.
-// El panel (derivaciones y cita manual) reserva en proceso con vetModule.scheduler y no pasa por aquí.
 app.post('/api/vet/citas', iaApiKey, planModule.requireModulo('agendamiento_ia'));
 app.use('/api/vet', iaApiKey, vetModule.router);
 
-// Bandeja de derivaciones del panel: sesión + rol (recepcion/direccion)
-//   GET  /api/derivaciones
-//   POST /api/derivaciones/:id/reservar  → 201 | 409 SLOT_TAKEN | 409 DERIVACION_NO_DISPONIBLE | 422 | 503
-// ──► RUTA AGÉNTICA: Pasarela pública para que el bot inyecte solicitudes con x-api-key
-app.use('/api/ia/derivaciones', requireApiKey(process.env.VET_API_KEY), derivacionesModule.iaRouter);
-// Estado del plan para pintar candados en el panel; POST /pruebas activa la prueba de 3 días.
+// ── RUTAS DEL PANEL: sesión de Express + rol ───────────────────────────────────────────
+// Bandeja: GET /api/derivaciones · POST /api/derivaciones/:id/reservar
+//   → 201 | 409 SLOT_TAKEN | 409 DERIVACION_NO_DISPONIBLE | 422 | 503
+app.use('/api/derivaciones', requireLogin, derivacionesModule.router);
+// Estado del plan (candados premium); POST /api/plan/pruebas activa la prueba gratuita.
 app.use('/api/plan', requireLogin, planModule.router);
-// Servicios para el Asistente de WhatsApp: API key, sin sesión.
-// DEBEN ir antes de cualquier app.use('/api', requireLogin, ...) o el asistente recibe 401.
-app.use('/api/ia/capacidades', iaApiKey, planModule.capacidadesIaRouter);
-
-// Cita manual desde el calendario del panel: mismo motor de reservas del asistente, sin x-api-key
-// en el navegador, y confirmación por WhatsApp en caliente.
+// Cita manual desde el calendario: mismo motor de reservas, sin x-api-key en el navegador.
 app.use(
   '/api/citas/manual',
   requireLogin,
   requireRole('recepcion', 'direccion'),
   citaManualRouter({ scheduler: vetModule.scheduler, notifier: notificadorWhatsApp })
 );
-// Métrica comercial: solo Dirección (decide la contratación). Solo conteos, sin datos de pacientes.
+// Métrica comercial: solo Dirección. Solo conteos, sin datos de pacientes.
 app.use('/api/impacto-ia', requireLogin, requireRole('direccion'), impactoIaModule.router);
+
 // Catch-all del panel: SIEMPRE al final de las rutas /api.
 app.use('/api', requireLogin, adminApiRoutes);
 

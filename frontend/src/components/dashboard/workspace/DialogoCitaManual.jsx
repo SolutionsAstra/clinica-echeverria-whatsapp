@@ -8,7 +8,6 @@
  * noValidate: los mensajes de error son nuestros y siempre en español, no los del navegador.
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { CalendarPlus, Loader2, X } from "lucide-react";
 import { agendarCitaManual, textoDeError } from "../../../api/panel";
 import { BOTON_PRIMARIO, BOTON_SECUNDARIO, CAMPO, ETIQUETA } from "../ui/estilos";
 import { Resultado } from "../ui/Vista";
@@ -16,16 +15,41 @@ import { diaEnZona } from "./agenda";
 import { validarCitaManual } from "./citaManual";
 import { ORDEN_ESPECIALIDADES, especialidad as datosEspecialidad } from "./especialidades";
 import { FOCO } from "./tokens";
+import { CalendarClock, CalendarPlus, Loader2, X } from "lucide-react";
 
 const MENSAJES_ERROR = {
   SLOT_TAKEN: "Ese horario se acaba de ocupar. Elige otra hora.",
-  SLOT_NOT_OFFERED:
-    "El doctor no atiende a esa hora o la hora no encaja con la duración de la especialidad. Elige otra.",
   BUSY_RETRY: "El sistema está ocupado. Intenta de nuevo en unos segundos.",
   INVALID_INPUT: "Revisa los datos del paciente y la hora elegida.",
   SIN_CONEXION: "No hay conexión con el servidor. Revisa el indicador del menú.",
 };
 
+/** Rechazos del motor de reservas (vet.book): ventana del doctor, duración fija o recurso. */
+const CODIGOS_VALIDACION_AGENDA = new Set(["SLOT_NOT_OFFERED", "INVALID_DURATION", "DURATION_MISMATCH", "RESOURCE_NOT_CONFIGURED"]);
+
+function clasificarFalla(err) {
+  const codigo = err?.code;
+  if (MENSAJES_ERROR[codigo]) return { tipo: "error", texto: MENSAJES_ERROR[codigo] };
+  // El 500 del motor de reservas se presenta como validación de agenda, nunca como "Error interno del servidor".
+  if (CODIGOS_VALIDACION_AGENDA.has(codigo) || (err?.status ?? 0) >= 500) return { tipo: "validacion" };
+  return { tipo: "error", texto: textoDeError(err) };
+}
+
+function AvisoReserva({ falla }) {
+  if (!falla) return null;
+  if (falla.tipo !== "validacion") return <Resultado resultado={falla} />;
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-3 rounded-md border border-[#4A4230] bg-[#0B192C]/60 px-4 py-3 text-sm leading-relaxed text-[#C7CCD3]"
+    >
+      <CalendarClock aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-[#C9AE72]" strokeWidth={1.5} />
+      <p>
+        <span className="font-medium text-[#E6E9EE]">Validación de Agenda:</span> {VALIDACION_AGENDA}
+      </p>
+    </div>
+  );
+}
 const tieneEspecialidad = (doctor, codigo) => (doctor.especialidades ?? []).includes(codigo);
 
 function Campo({ id, etiqueta, error, className = "", children }) {
@@ -116,7 +140,9 @@ export default function DialogoCitaManual({ abierto, onCerrar, doctores, doctorI
       const cita = await agendarCitaManual(payload);
       onAgendada({ ...cita, paciente: payload.nombre });
     } catch (err) {
-      setFalla({ tipo: "error", texto: MENSAJES_ERROR[err?.code] ?? textoDeError(err) });
+      const falla = clasificarFalla(err);
+      setFalla(falla);
+      if (falla.tipo === "validacion") setErrores((e) => ({ ...e, hora: "Elige otra hora dentro de la ventana del doctor." }));
     } finally {
       setEnviando(false);
     }
@@ -261,7 +287,7 @@ export default function DialogoCitaManual({ abierto, onCerrar, doctores, doctorI
         </fieldset>
 
         <div className="mt-6 min-h-5">
-          <Resultado resultado={falla} />
+          <AvisoReserva falla={falla} />
         </div>
 
         <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-[#1A2D48] pt-6">

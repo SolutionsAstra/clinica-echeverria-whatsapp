@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MENSAJES, MODULO, cupoOperadores, estadoModulo } from "./plan.js";
+
 import { MENSAJES, MODULO, TITULOS, cupoOperadores, diasPruebaDe, esBloqueoPremium, estadoModulo, etiquetaPrueba } from "./plan.js";
 
 const DIA = 86_400_000;

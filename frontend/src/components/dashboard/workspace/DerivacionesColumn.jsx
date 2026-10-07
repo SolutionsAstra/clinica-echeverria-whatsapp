@@ -1,6 +1,6 @@
 import { RotateCw } from "lucide-react";
 import { textoDeError } from "../../../api/panel";
-import BandejaDerivaciones from "../BandejaDerivaciones";
+import BandejaEmbebida from "./BandejaEmbebida";
 import { ZONA_CLINICA } from "./agenda";
 import { FOCO, LINEA, VIDRIO } from "./tokens";
 
@@ -81,7 +81,6 @@ export default function DerivacionesColumn({ solicitudes, cargando, error, actua
           <BotonReintentar onClick={onReintentar} />
         </div>
       )}
-      <BandejaDerivaciones solicitudes={solicitudes} onReservar={onReservar} embebida />
-    </>
+      <BandejaEmbebida solicitudes={solicitudes} onReservar={onReservar} />    </>
   );
 }

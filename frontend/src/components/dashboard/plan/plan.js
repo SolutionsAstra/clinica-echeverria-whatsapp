@@ -40,7 +40,7 @@ export const TITULOS = Object.freeze({
 });
 
 /** Respaldo si GET /api/plan aún no expone diasPruebaPorModulo (igual a DIAS_PRUEBA_POR_MODULO del servidor). */
-const DIAS_PRUEBA_RESPALDO = Object.freeze({ [MODULO.REPORTES]: 3, [MODULO.AGENDAMIENTO_IA]: 7 });
+const DIAS_PRUEBA_RESPALDO = Object.freeze({ [MODULO.REPORTES]: 7, [MODULO.AGENDAMIENTO_IA]: 7 });
 
 const DIA_MS = 86_400_000;
 
