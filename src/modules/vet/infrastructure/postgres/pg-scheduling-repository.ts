@@ -38,7 +38,7 @@ export function createPgSchedulingRepository(
       const { rows } = await pool.query<{
         doctor_id: number;
         doctor_nombre: string;
-        dias: string | null;
+        dias: string | number[] | null;
         hora_inicio: string | null;
         hora_fin: string | null;
       }>(
@@ -160,14 +160,15 @@ export function createPgSchedulingRepository(
   }
 }
 
-function toShift(dias: string, horaInicio: string, horaFin: string): WeeklyShift {
+function toShift(dias: string | number[], horaInicio: string, horaFin: string): WeeklyShift {
+  const lista = Array.isArray(dias) ? dias : String(dias).replace(/[{}\s]/g, "").split(",");
   return {
-    weekdays: dias
-      .split(",")
-      .map((d) => Number(d.trim()))
+    weekdays: lista
+      .map((d) => Number(d))
       .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6),
-    openMinute: parseHHMM(horaInicio),
-    closeMinute: parseHHMM(horaFin),
+    // TIME de Postgres llega como 'HH:MM:SS'; parseHHMM exige 'HH:MM'.
+    openMinute: parseHHMM(String(horaInicio).slice(0, 5)),
+    closeMinute: parseHHMM(String(horaFin).slice(0, 5)),
   };
 }
 

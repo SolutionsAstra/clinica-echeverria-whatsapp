@@ -20,6 +20,7 @@ const { createVetModule, requireApiKey } = require('./modules/vet');
 const { createDerivacionesModule } = require('./modules/derivaciones');
 const { createPlanModule } = require('./modules/plan');
 const { citaManualRouter } = require('./routes/citaManual.routes');
+const { createPgLectorHorarioDoctor } = require('./routes/horarioDoctor.pg');
 const { createCancelacionesModule } = require('./modules/cancelaciones');
 const { createPgDerivacionesRepository } = require('./modules/derivaciones/infrastructure/pg-derivaciones-repository');const dbSchema = process.env.DB_SCHEMA || 'public';
 const { createImpactoIaModule, parsearTarifas } = require('./modules/impacto-ia');
@@ -195,6 +196,7 @@ app.use(
   citaManualRouter({
     scheduler: vetModule.scheduler,
     notifier: notificadorWhatsApp,
+    horarioDoctor: createPgLectorHorarioDoctor(getPool, { schema: dbSchema }),
     horarioOcupado: (q) => repoChoqueHorario.horarioOcupado(q),
   })
 );
