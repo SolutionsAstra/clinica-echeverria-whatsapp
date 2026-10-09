@@ -17,7 +17,23 @@ router.get('/', (req, res) => {
 });
 
 // Meta envía aquí cada mensaje entrante del paciente.
+const crypto = require('crypto');
+
+/** Firma de Meta: "sha256=" + HMAC-SHA256(App Secret, cuerpo crudo). Comparación en tiempo constante. */
+function firmaValida(req) {
+  const secreto = process.env.WHATSAPP_APP_SECRET;
+  const firma = req.get('x-hub-signature-256') || '';
+  if (!secreto || !Buffer.isBuffer(req.rawBody) || !firma.startsWith('sha256=')) return false;
+  const esperada = Buffer.from(`sha256=${crypto.createHmac('sha256', secreto).update(req.rawBody).digest('hex')}`);
+  const recibida = Buffer.from(firma);
+  return recibida.length === esperada.length && crypto.timingSafeEqual(recibida, esperada);
+}
+
 router.post('/', (req, res) => {
+  if (!firmaValida(req)) {
+    console.warn('[webhook] POST rechazado: firma X-Hub-Signature-256 ausente o inválida');
+    return res.sendStatus(401);
+  }
   res.sendStatus(200);
   const mensajes = (req.body?.entry ?? []).flatMap((e) => e.changes ?? []).flatMap((c) => c.value?.messages ?? []);
   for (const mensaje of mensajes) {
@@ -30,5 +46,6 @@ router.post('/', (req, res) => {
       .catch((err) => console.error('Error procesando mensaje entrante:', err));
   }
 });
+
 
 module.exports = router;

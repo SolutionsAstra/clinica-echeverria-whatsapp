@@ -150,30 +150,37 @@ require('./jobs/reportJob');
 // Al implementar cada módulo, se reemplaza rutaPendiente(...) por su router; el guard no cambia.
 const rutaPendiente = (modulo) => (req, res) =>
   res.status(501).json({ error: 'NO_IMPLEMENTADO', modulo, mensaje: 'Ruta reservada: el módulo está habilitado pero su lógica aún no se publica.' });
+const { crearLimiteLogin } = require('./middleware/limiteLogin');
+
+const ES_PRODUCCION = process.env.NODE_ENV === 'production';
+const SESSION_SECRET = process.env.SESSION_SECRET;
+
+if (ES_PRODUCCION && (!SESSION_SECRET || SESSION_SECRET.length < 32)) {
+  throw new Error('[server] SESSION_SECRET ausente o con menos de 32 caracteres: no se arranca en producción con un secreto público.');
+}
+if (ES_PRODUCCION && !process.env.WHATSAPP_APP_SECRET) {
+  throw new Error('[server] WHATSAPP_APP_SECRET ausente: el webhook no puede verificar la firma de Meta.');
+}
+
 const app = express();
-app.use(express.json());
-app.locals.plan = planModule; // lo usa routes/adminApi.js para los bloqueos premium
+if (ES_PRODUCCION) app.set('trust proxy', 1);
+
+// rawBody: el webhook necesita los bytes exactos para validar X-Hub-Signature-256.
+app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
+app.locals.plan = planModule;
 
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'cambia-este-secreto-en-produccion',
+  secret: SESSION_SECRET || 'solo-desarrollo-local-no-usar-en-produccion',
   resave: false,
   saveUninitialized: false,
-  cookie: {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // requiere HTTPS en producción
-    maxAge: 8 * 3600000, // 8 horas
-  },
-  // Nota: el store por defecto es en memoria — para producción con más de una
-  // instancia del servidor, usa connect-redis u otro store compartido.
+  cookie: { httpOnly: true, sameSite: 'lax', secure: ES_PRODUCCION, maxAge: 8 * 3600000 },
 }));
 
 app.get('/', (req, res) => res.send('Servidor de WhatsApp — Clínica Echeverría activo ✅'));
-
-// El webhook de Meta NO lleva autenticación (Meta no puede loguearse)
 app.use('/webhook', webhookRoutes);
-
-// Login/logout — públicos, es lo que permite entrar
+app.use('/api/auth/login', crearLimiteLogin()); // El 429 sale sin tocar bcrypt ni la base de datos
 app.use('/api/auth', authRouter);
+
 
 // ── RUTAS DEL ASISTENTE DE WHATSAPP: x-api-key, sin sesión ─────────────────────────────
 // DEBEN ir antes de app.use('/api', requireLogin, ...) o el asistente recibe 401.
