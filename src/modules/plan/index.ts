@@ -4,6 +4,8 @@ export {
   MENSAJE_LIMITE_OPERADORES,
   MENSAJE_MODULO,
   MODULOS,
+  MODULOS_CON_PRUEBA,
+  DIAS_PRUEBA_POR_MODULO,
   PlanError,
   isPlanError,
   type EstadoPlan,

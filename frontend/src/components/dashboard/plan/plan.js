@@ -14,6 +14,9 @@ export const MODULO = Object.freeze({
   MULTI_CALENDARIO: "multi_calendario",
   NOTIFICACIONES: "notificaciones_avanzadas",
   AGENDAMIENTO_IA: "agendamiento_ia",
+  ANALITICA_FINANCIERA: "analitica_financiera",
+  LISTA_ESPERA_VIP: "lista_espera_vip",
+  REACTIVACION_DORMIDOS: "reactivacion_dormidos",
 });
 
 /** Código con el que el servidor responde un módulo no contratado (src/modules/plan/http/plan.router.ts). */
@@ -27,7 +30,14 @@ export const MENSAJES = Object.freeze({
   [MODULO.NOTIFICACIONES]: "Requiere la activación del Módulo de Notificaciones Avanzadas de Astra.",
   [MODULO.AGENDAMIENTO_IA]:
     "Agendamiento Automático con IA: el asistente confirma citas por WhatsApp las 24 horas. Consulte a Soluciones Astra para activarlo.",
-  LIMITE_OPERADORES:
+  // Mismos textos que MENSAJE_MODULO del servidor (PENDIENTES de visto bueno de Soluciones Astra).
+  [MODULO.ANALITICA_FINANCIERA]:
+    "Analítica Financiera: ganancias brutas, ingresos por especialista y asistencia vs. cancelaciones en Looker Studio. Consulte a Soluciones Astra para activarla.",
+  [MODULO.LISTA_ESPERA_VIP]:
+    "Lista de Espera VIP: la IA reserva un lugar a los pacientes cuando la agenda está llena y les avisa por WhatsApp al liberarse un cupo. Consulte a Soluciones Astra para activarla.",
+  [MODULO.REACTIVACION_DORMIDOS]:
+    "Reactivación de Pacientes Dormidos: campañas automáticas por WhatsApp a pacientes sin citas en 3 o 6 meses. Consulte a Soluciones Astra para activarla.",
+      LIMITE_OPERADORES:
     "Límite de operadores alcanzado. Consulte a Soluciones Astra para adquirir licencias de usuarios adicionales.",
 });
 
@@ -37,11 +47,19 @@ export const TITULOS = Object.freeze({
   [MODULO.MULTI_CALENDARIO]: "Multi-Calendario Unificado",
   [MODULO.NOTIFICACIONES]: "Notificaciones Avanzadas",
   [MODULO.AGENDAMIENTO_IA]: "Agente IA Agenda",
+  [MODULO.ANALITICA_FINANCIERA]: "Analítica Financiera",
+  [MODULO.LISTA_ESPERA_VIP]: "Lista de Espera VIP",
+  [MODULO.REACTIVACION_DORMIDOS]: "Reactivación de Pacientes Dormidos",
 });
 
 /** Respaldo si GET /api/plan aún no expone diasPruebaPorModulo (igual a DIAS_PRUEBA_POR_MODULO del servidor). */
-const DIAS_PRUEBA_RESPALDO = Object.freeze({ [MODULO.REPORTES]: 7, [MODULO.AGENDAMIENTO_IA]: 7 });
-
+const DIAS_PRUEBA_RESPALDO = Object.freeze({
+  [MODULO.REPORTES]: 7,
+  [MODULO.AGENDAMIENTO_IA]: 7,
+  [MODULO.ANALITICA_FINANCIERA]: 7,
+  [MODULO.LISTA_ESPERA_VIP]: 7,
+  [MODULO.REACTIVACION_DORMIDOS]: 7,
+});
 const DIA_MS = 86_400_000;
 
 /**

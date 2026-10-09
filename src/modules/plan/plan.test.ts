@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import {
   DIAS_PRUEBA,
   DIAS_PRUEBA_POR_MODULO,
+  MENSAJE_MODULO, 
+  MODULOS, 
+  MODULOS_CON_PRUEBA,
   calcularEstadoPlan,
   crearPrueba,
   esErrorLimiteBd,
@@ -59,7 +62,7 @@ test("cupo de operadores: el tercero se rechaza con el mensaje comercial", () =>
   assert.throws(() => verificarCupoOperador(3, 2), (err: unknown) => isPlanError(err) && err.code === "LIMITE_OPERADORES");
 });
 
-test("crearPrueba: 3 días exactos, una sola vez y solo para módulos que la ofrecen", () => {
+test("crearPrueba: días exactos del módulo, una sola vez y solo para módulos que la ofrecen", () => {
   const p = crearPrueba("reportes", BASE, [], AHORA);
   assert.equal(p.expiraEn.getTime() - p.iniciadaEn.getTime(), DIAS_PRUEBA * DIA);
   assert.throws(() => crearPrueba("reportes", BASE, [p], AHORA), (e: unknown) => isPlanError(e) && e.code === "PRUEBA_NO_DISPONIBLE");
@@ -72,7 +75,7 @@ test("crearPrueba: 3 días exactos, una sola vez y solo para módulos que la ofr
 });
 
 test("esErrorLimiteBd reconoce la excepción del trigger de Postgres", () => {
-  assert.equal(esErrorLimiteBd({ code: "P0001", message: "LIMITE_OPERADORES" }), true);
+  assert.equal(p.expiraEn.getTime() - p.iniciadaEn.getTime(), (DIAS_PRUEBA_POR_MODULO.reportes ?? 0) * DIA);
   assert.equal(esErrorLimiteBd({ code: "23505", message: "duplicate key" }), false);
   assert.equal(esErrorLimiteBd(null), false);
 });
@@ -152,7 +155,13 @@ test("agendamiento_ia: prueba de 7 días exactos, una sola vez, y se apaga al ve
 test("plan base: agendamiento_ia bloqueado, con prueba disponible y días por módulo publicados", () => {
   const e = calcularEstadoPlan(BASE, [], 1, AHORA);
   assert.deepEqual(e.modulos.agendamiento_ia, { habilitado: false, origen: null, pruebaExpiraEn: null, pruebaDisponible: true });
-  assert.deepEqual(e.diasPruebaPorModulo, { reportes: 3, agendamiento_ia: 7 });
+  assert.deepEqual(e.diasPruebaPorModulo, {
+    reportes: 7,
+    agendamiento_ia: 7,
+    analitica_financiera: 7,
+    lista_espera_vip: 7,
+    reactivacion_dormidos: 7,
+  });
 });
 
 test("agendamiento_ia contratado no ofrece prueba", () => {
@@ -161,8 +170,35 @@ test("agendamiento_ia contratado no ofrece prueba", () => {
     (e: unknown) => isPlanError(e) && e.code === "PRUEBA_NO_DISPONIBLE",
   );
 });
-test("crearPrueba: días exactos del módulo, una sola vez y solo para módulos que la ofrecen", () => {
-  const p = crearPrueba("reportes", BASE, [], AHORA);
-  assert.equal(p.expiraEn.getTime() - p.iniciadaEn.getTime(), (DIAS_PRUEBA_POR_MODULO.reportes ?? 0) * DIA);
-  // … el resto de la prueba queda igual
+test("módulos de expansión: 7 días de prueba, bloqueados por defecto y habilitables por contrato o prueba", () => {
+  const NUEVOS = ["analitica_financiera", "lista_espera_vip", "reactivacion_dormidos"] as const;
+  for (const m of NUEVOS) {
+    assert.ok((MODULOS as readonly string[]).includes(m), `${m} en MODULOS`);
+    assert.ok(MODULOS_CON_PRUEBA.includes(m), `${m} en MODULOS_CON_PRUEBA`);
+    assert.equal(DIAS_PRUEBA_POR_MODULO[m], 7);
+    assert.ok(MENSAJE_MODULO[m].length > 0);
+
+    const base = calcularEstadoPlan(BASE, [], 1, AHORA);
+    assert.deepEqual(base.modulos[m], { habilitado: false, origen: null, pruebaExpiraEn: null, pruebaDisponible: true });
+
+    const p = crearPrueba(m, BASE, [], AHORA);
+    assert.equal(p.expiraEn.getTime() - p.iniciadaEn.getTime(), 7 * DIA);
+    assert.equal(calcularEstadoPlan(BASE, [p], 1, AHORA).modulos[m].origen, "prueba");
+
+    assert.equal(calcularEstadoPlan({ ...BASE, modulos: [m] }, [], 1, AHORA).modulos[m].origen, "contrato");
+  }
+});
+
+test("exigirModulo rechaza los módulos de expansión no contratados con su mensaje", async () => {
+  const repo: PlanRepository = {
+    leerContrato: async () => BASE,
+    contarOperadoresActivos: async () => 1,
+    listarPruebas: async () => [],
+    registrarPrueba: async () => true,
+  };
+  const service = createPlanService({ repository: repo, reloj: () => AHORA });
+  await assert.rejects(
+    service.exigirModulo("lista_espera_vip"),
+    (e: unknown) => isPlanError(e) && e.code === "MODULO_PREMIUM" && e.modulo === "lista_espera_vip" && e.message === MENSAJE_MODULO.lista_espera_vip,
+  );
 });

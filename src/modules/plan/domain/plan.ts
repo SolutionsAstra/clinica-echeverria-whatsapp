@@ -5,18 +5,36 @@
  * El contrato vive en la tabla `plan_clinica`: Soluciones Astra lo cambia con un UPDATE;
  * el código no trae licencias "quemadas".
  */
-export const MODULOS = ["reportes", "multi_calendario", "notificaciones_avanzadas", "agendamiento_ia"] as const;
+export const MODULOS = [
+  "reportes",
+  "multi_calendario",
+  "notificaciones_avanzadas",
+  "agendamiento_ia",
+  // Expansión 2026-10-09 (catálogo Astra Digital Solutions).
+  "analitica_financiera",
+  "lista_espera_vip",
+  "reactivacion_dormidos",
+] as const;
 export type Modulo = (typeof MODULOS)[number];
 
 /**
  * Días de prueba gratuita por módulo. Un módulo ausente NO ofrece prueba.
  * agendamiento_ia: 7 días, para que la clínica compare una semana completa
  * (incluido un fin de semana) de citas confirmadas por la IA contra el modo derivación.
+ * Módulos de expansión: 7 días por defecto cada uno.
  */
 export const DIAS_PRUEBA_POR_MODULO: Readonly<Partial<Record<Modulo, number>>> = Object.freeze({
   reportes: 7,
   agendamiento_ia: 7,
+  analitica_financiera: 7,
+  lista_espera_vip: 7,
+  reactivacion_dormidos: 7,
 });
+
+/** Módulos que ofrecen prueba gratuita. Derivado de DIAS_PRUEBA_POR_MODULO: una sola fuente de verdad. */
+export const MODULOS_CON_PRUEBA: readonly Modulo[] = Object.freeze(
+  MODULOS.filter((m) => (DIAS_PRUEBA_POR_MODULO[m] ?? 0) > 0),
+);
 
 /** Compatibilidad con clientes que leen `diasPrueba` de GET /api/plan. Usa diasPruebaPorModulo. */
 export const DIAS_PRUEBA = 3;
@@ -31,6 +49,13 @@ export const MENSAJE_MODULO: Record<Modulo, string> = {
   // PENDIENTE de visto bueno de Soluciones Astra.
   agendamiento_ia:
     "Agendamiento Automático con IA: el asistente confirma citas por WhatsApp las 24 horas. Consulte a Soluciones Astra para activarlo.",
+  // PENDIENTES de visto bueno de Soluciones Astra.
+  analitica_financiera:
+    "Analítica Financiera: ganancias brutas, ingresos por especialista y asistencia vs. cancelaciones en Looker Studio. Consulte a Soluciones Astra para activarla.",
+  lista_espera_vip:
+    "Lista de Espera VIP: la IA reserva un lugar a los pacientes cuando la agenda está llena y les avisa por WhatsApp al liberarse un cupo. Consulte a Soluciones Astra para activarla.",
+  reactivacion_dormidos:
+    "Reactivación de Pacientes Dormidos: campañas automáticas por WhatsApp a pacientes sin citas en 3 o 6 meses. Consulte a Soluciones Astra para activarla.",
 };
 
 export const MENSAJE_LIMITE_OPERADORES =

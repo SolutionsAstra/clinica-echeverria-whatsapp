@@ -145,7 +145,11 @@ for (const [nombre, mw] of Object.entries({
 }
 require('./jobs/reminders');
 require('./jobs/reportJob');
-
+// Rutas de los módulos de expansión cuyo handler aún no existe: el candado premium ya protege
+// la URL y, si pasa, se responde 501 explícito (no un 404 confuso del catch-all de /api).
+// Al implementar cada módulo, se reemplaza rutaPendiente(...) por su router; el guard no cambia.
+const rutaPendiente = (modulo) => (req, res) =>
+  res.status(501).json({ error: 'NO_IMPLEMENTADO', modulo, mensaje: 'Ruta reservada: el módulo está habilitado pero su lógica aún no se publica.' });
 const app = express();
 app.use(express.json());
 app.locals.plan = planModule; // lo usa routes/adminApi.js para los bloqueos premium
@@ -180,6 +184,8 @@ app.use('/api/ia/derivaciones', iaApiKey, derivacionesModule.iaRouter);
 // Sin el módulo, POST /api/vet/citas responde 403 { error: 'MODULO_PREMIUM' } aunque el bot lo intente.
 // GET /api/vet/disponibilidad queda abierto porque el modo derivación también lo usa.
 app.post('/api/vet/citas', iaApiKey, planModule.requireModulo('agendamiento_ia'));
+// Lista de espera VIP (premium: lista_espera_vip). DEBE ir antes de app.use('/api/vet', ...).
+app.post('/api/vet/lista-espera', iaApiKey, planModule.requireModulo('lista_espera_vip'), rutaPendiente('lista_espera_vip'));
 app.use('/api/vet', iaApiKey, vetModule.router);
 
 // ── RUTAS DEL PANEL: sesión de Express + rol ───────────────────────────────────────────
@@ -204,6 +210,16 @@ app.use(
 app.use('/api/impacto-ia', requireLogin, requireRole('direccion'), impactoIaModule.router);
 // Cancelar / reagendar desde WhatsApp. La política (plan, 48 h, límite 1) se decide aquí, no en el bot.
 app.use('/api/ia/citas', iaApiKey, cancelacionesModule.iaRouter);
+// Campañas de reactivación de pacientes dormidos (premium: reactivacion_dormidos). Solo el asistente (x-api-key).
+app.post('/api/ia/campanas/reactivacion', iaApiKey, planModule.requireModulo('reactivacion_dormidos'), rutaPendiente('reactivacion_dormidos'));
+// Analítica financiera (premium: analitica_financiera). Solo Dirección. DEBE ir antes del catch-all de /api.
+app.get(
+  '/api/reportes/financieros',
+  requireLogin,
+  requireRole('direccion'),
+  planModule.requireModulo('analitica_financiera'),
+  rutaPendiente('analitica_financiera'),
+);
 // Catch-all del panel: SIEMPRE al final de las rutas /api.
 app.use('/api', requireLogin, adminApiRoutes);
 
