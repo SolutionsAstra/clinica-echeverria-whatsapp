@@ -14,10 +14,18 @@ export const MODULO = Object.freeze({
   MULTI_CALENDARIO: "multi_calendario",
   NOTIFICACIONES: "notificaciones_avanzadas",
   AGENDAMIENTO_IA: "agendamiento_ia",
+  // Catálogo de expansión de Astra Digital Solutions.
   ANALITICA_FINANCIERA: "analitica_financiera",
   LISTA_ESPERA_VIP: "lista_espera_vip",
   REACTIVACION_DORMIDOS: "reactivacion_dormidos",
 });
+
+/** Módulos de expansión, en el orden en que aparecen en el menú. */
+export const MODULOS_EXPANSION = Object.freeze([
+  MODULO.ANALITICA_FINANCIERA,
+  MODULO.LISTA_ESPERA_VIP,
+  MODULO.REACTIVACION_DORMIDOS,
+]);
 
 /** Código con el que el servidor responde un módulo no contratado (src/modules/plan/http/plan.router.ts). */
 export const CODIGO_BLOQUEO_PREMIUM = "MODULO_PREMIUM";
@@ -30,14 +38,13 @@ export const MENSAJES = Object.freeze({
   [MODULO.NOTIFICACIONES]: "Requiere la activación del Módulo de Notificaciones Avanzadas de Astra.",
   [MODULO.AGENDAMIENTO_IA]:
     "Agendamiento Automático con IA: el asistente confirma citas por WhatsApp las 24 horas. Consulte a Soluciones Astra para activarlo.",
-  // Mismos textos que MENSAJE_MODULO del servidor (PENDIENTES de visto bueno de Soluciones Astra).
   [MODULO.ANALITICA_FINANCIERA]:
-    "Analítica Financiera: ganancias brutas, ingresos por especialista y asistencia vs. cancelaciones en Looker Studio. Consulte a Soluciones Astra para activarla.",
+    "Visualización ejecutiva conectada en tiempo real. Métricas: Ganancias brutas, ingresos por especialista, tasa de asistencia vs cancelaciones. Inversión adicional: +US$ 200,00.",
   [MODULO.LISTA_ESPERA_VIP]:
-    "Lista de Espera VIP: la IA reserva un lugar a los pacientes cuando la agenda está llena y les avisa por WhatsApp al liberarse un cupo. Consulte a Soluciones Astra para activarla.",
+    "Asignación automatizada de vacantes por la IA cuando la agenda está llena ante cancelaciones de pacientes. Inversión adicional: +US$ 150,00.",
   [MODULO.REACTIVACION_DORMIDOS]:
-    "Reactivación de Pacientes Dormidos: campañas automáticas por WhatsApp a pacientes sin citas en 3 o 6 meses. Consulte a Soluciones Astra para activarla.",
-      LIMITE_OPERADORES:
+    "Campaña automatizada por WhatsApp para el escaneo histórico de inactividad de 3 o 6 meses. Inversión adicional: +US$ 150,00.",
+  LIMITE_OPERADORES:
     "Límite de operadores alcanzado. Consulte a Soluciones Astra para adquirir licencias de usuarios adicionales.",
 });
 
@@ -49,7 +56,7 @@ export const TITULOS = Object.freeze({
   [MODULO.AGENDAMIENTO_IA]: "Agente IA Agenda",
   [MODULO.ANALITICA_FINANCIERA]: "Analítica Financiera",
   [MODULO.LISTA_ESPERA_VIP]: "Lista de Espera VIP",
-  [MODULO.REACTIVACION_DORMIDOS]: "Reactivación de Pacientes Dormidos",
+  [MODULO.REACTIVACION_DORMIDOS]: "Reactivación de Clientes",
 });
 
 /** Respaldo si GET /api/plan aún no expone diasPruebaPorModulo (igual a DIAS_PRUEBA_POR_MODULO del servidor). */
@@ -60,6 +67,7 @@ const DIAS_PRUEBA_RESPALDO = Object.freeze({
   [MODULO.LISTA_ESPERA_VIP]: 7,
   [MODULO.REACTIVACION_DORMIDOS]: 7,
 });
+
 const DIA_MS = 86_400_000;
 
 /**
@@ -113,7 +121,7 @@ export function esBloqueoPremium(err) {
 }
 
 /**
- * Días de prueba del módulo según el servidor (7 agendamiento_ia, 3 reportes).
+ * Días de prueba del módulo según el servidor (7 en los módulos que la ofrecen).
  * 0 = el módulo no ofrece prueba: el bloqueo solo invita a contactar a Soluciones Astra.
  */
 export function diasPruebaDe(plan, modulo) {

@@ -1,9 +1,11 @@
 /**
  * Bloqueo comercial reutilizable: vidrio esmerilado, candado y "Probar Gratis por N días".
  *   <BloqueoPremium>        pantalla completa de un módulo (Reportes, Derivaciones IA…)
+ *   <BloqueoExpansion>      la misma pantalla para los módulos del catálogo de expansión
+ *                           (Analítica Financiera, Lista de Espera VIP, Reactivación de Clientes)
  *   <BloqueoPorRespuesta>   la misma pantalla armada desde un 403 MODULO_PREMIUM (la usa <ErrorVista>)
  *   <AccionPrueba>          solo el botón de prueba, para tarjetas (AgendamientoIaCard)
- * N sale de GET /api/plan → diasPruebaPorModulo (3 reportes, 7 agendamiento_ia).
+ * N sale de GET /api/plan → diasPruebaPorModulo.
  * Este archivo NO importa ui/Vista: Vista lo importa a él (sin dependencias circulares).
  */
 import { useState } from "react";
@@ -25,7 +27,7 @@ function ActivarPrueba({ modulo, diasPrueba, onActivada }) {
     setFase("activando");
     setError(null);
     try {
-      await iniciarPrueba(modulo);
+      await iniciarPrueba(modulo); // POST /api/plan/pruebas { modulo }
       setFase("activada");
       onActivada?.();
     } catch (err) {
@@ -100,7 +102,7 @@ export function AccionPrueba({ modulo, rol, pruebaDisponible = null, diasPrueba 
 }
 
 /**
- * @param {{ titulo: string, mensaje: string, modulo: string|null, rol: string,
+ * @param {{ titulo: string, mensaje: string, detalle?: React.ReactNode, modulo: string|null, rol: string,
  *           pruebaDisponible?: boolean|null, diasPrueba?: number, vistaPrevia?: React.ReactNode,
  *           onActivada?: () => void }} props
  */
@@ -116,7 +118,8 @@ export default function BloqueoPremium({
   onActivada,
 }) {
   return (
-    <PanelPremium titulo={titulo} mensaje={mensaje} detalle={detalle} vistaPrevia={vistaPrevia}>      <AccionPrueba
+    <PanelPremium titulo={titulo} mensaje={mensaje} detalle={detalle} vistaPrevia={vistaPrevia}>
+      <AccionPrueba
         modulo={modulo}
         rol={rol}
         pruebaDisponible={pruebaDisponible}
@@ -150,6 +153,33 @@ function SiluetaModulo() {
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * Bloqueo de un módulo del catálogo de expansión. Texto comercial exacto (MENSAJES[modulo]),
+ * días de prueba reales del servidor y desbloqueo reactivo: al activar la prueba recarga
+ * GET /api/plan y la vista que lo contiene pasa sola a su estado habilitado.
+ *
+ * @param {{ modulo: string, plan: { datos: object|null, recargar?: () => void }, rol: string,
+ *           ahora: number, titulo?: string, vistaPrevia?: React.ReactNode, onActivada?: () => void }} props
+ */
+export function BloqueoExpansion({ modulo, plan, rol, ahora, titulo, vistaPrevia = null, onActivada }) {
+  const e = estadoModulo(plan?.datos, modulo, ahora);
+  return (
+    <BloqueoPremium
+      titulo={titulo ?? TITULOS[modulo] ?? "Módulo Premium de Astra"}
+      mensaje={MENSAJES[modulo] ?? MENSAJE_GENERICO}
+      modulo={modulo}
+      rol={rol}
+      pruebaDisponible={e.conocido ? e.pruebaDisponible : null}
+      diasPrueba={diasPruebaDe(plan?.datos, modulo)}
+      vistaPrevia={vistaPrevia ?? <SiluetaModulo />}
+      onActivada={() => {
+        plan?.recargar?.();
+        onActivada?.();
+      }}
+    />
   );
 }
 

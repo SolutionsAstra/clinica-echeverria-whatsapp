@@ -73,10 +73,36 @@ function IndicadorRed({ estado, latenciaMs }) {
 
 /**
  * Entrada del menú. Es un botón (la navegación es interna, sin recarga) con aria-current.
- * `bloqueada` solo añade el candado: la sección se abre y muestra su pantalla premium.
+ * A la derecha, en este orden de prioridad:
+ *   bloqueada   → candado atenuado (la sección se abre y muestra su pantalla premium)
+ *   diasPrueba  → "Prueba · N d" mientras la prueba gratuita está vigente
+ *   cuenta      → contador (bandeja de derivaciones)
  */
 function EntradaMenu({ seccion, activa, onNavegar }) {
-  const { id, etiqueta, cuenta, bloqueada } = seccion;
+  const { id, etiqueta, cuenta, bloqueada, diasPrueba } = seccion;
+
+  let accesorio = null;
+  if (bloqueada) {
+    accesorio = (
+      <>
+        <Lock
+          aria-hidden
+          className={`ml-auto h-3.5 w-3.5 shrink-0 transition-colors duration-200 ${activa ? "text-[#A3AEBD]" : "text-[#7D8BA0]/70"}`}
+          strokeWidth={1.5}
+        />
+        <span className="sr-only">(módulo premium)</span>
+      </>
+    );
+  } else if (diasPrueba != null) {
+    accesorio = (
+      <span className="ml-auto shrink-0 text-xs tabular-nums text-[#7D8BA0]">
+        Prueba · {diasPrueba} d<span className="sr-only">{diasPrueba === 1 ? "ía restante" : "ías restantes"}</span>
+      </span>
+    );
+  } else if (cuenta != null) {
+    accesorio = <span className="ml-auto tabular-nums text-[#7D8BA0]">{cuenta}</span>;
+  }
+
   return (
     <li className="shrink-0">
       <button
@@ -88,15 +114,21 @@ function EntradaMenu({ seccion, activa, onNavegar }) {
         }`}
       >
         {activa && <span aria-hidden className="absolute inset-y-2 left-0 hidden w-px bg-[#E6E9EE] xl:block" />}
-        <span>{etiqueta}</span>
-        {bloqueada && (
-          <>
-            <Lock aria-hidden className="h-3.5 w-3.5 text-[#7D8BA0]" strokeWidth={1.75} />
-            <span className="sr-only">(módulo premium)</span>
-          </>
-        )}
-        {cuenta != null && <span className="ml-auto tabular-nums text-[#7D8BA0]">{cuenta}</span>}
+        <span className="min-w-0 truncate">{etiqueta}</span>
+        {accesorio}
       </button>
+    </li>
+  );
+}
+
+/** Rótulo del grupo de expansión: título en columna (≥ xl), línea vertical de 1 px en la barra superior. */
+function SeparadorExpansion() {
+  return (
+    <li role="presentation" aria-hidden className="flex shrink-0 items-center px-1 xl:block xl:px-3 xl:pb-2 xl:pt-6">
+      <span className="block h-5 w-px bg-[#1A2D48] xl:hidden" />
+      <span className="hidden text-[11px] font-medium uppercase tracking-[0.08em] text-[#7D8BA0] xl:block">
+        Módulos de expansión
+      </span>
     </li>
   );
 }
@@ -115,6 +147,9 @@ export default function ControlSidebar({
   cerrandoSesion,
   errorCierre,
 }) {
+  const principales = secciones.filter((s) => s.grupo !== "expansion");
+  const expansion = secciones.filter((s) => s.grupo === "expansion");
+
   return (
     <div className="flex flex-wrap items-center gap-x-10 gap-y-5 px-5 py-4 lg:px-8 xl:h-full xl:flex-col xl:flex-nowrap xl:items-stretch xl:gap-9 xl:px-5 xl:py-8">
       {/* Identidad */}
@@ -134,7 +169,11 @@ export default function ControlSidebar({
 
       <nav aria-label="Secciones del panel" className="order-last -mx-1 w-full min-w-0 xl:order-none xl:-mx-3 xl:w-auto">
         <ul className="flex gap-1 overflow-x-auto pb-1 [scrollbar-width:thin] xl:flex-col xl:gap-0.5 xl:overflow-visible xl:pb-0">
-          {secciones.map((s) => (
+          {principales.map((s) => (
+            <EntradaMenu key={s.id} seccion={s} activa={s.id === activa} onNavegar={onNavegar} />
+          ))}
+          {expansion.length > 0 && <SeparadorExpansion />}
+          {expansion.map((s) => (
             <EntradaMenu key={s.id} seccion={s} activa={s.id === activa} onNavegar={onNavegar} />
           ))}
         </ul>

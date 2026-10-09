@@ -11,7 +11,7 @@
  *   Fondo: MedicalNetworkBackground (Canvas) detrás de todo, en #0B192C.
  *
  * Datos compartidos entre vistas (un solo sondeo por recurso):
- *   GET /api/plan           cada 5 min   → candados premium
+ *   GET /api/plan           cada 5 min   → candados premium (y al activar una prueba)
  *   GET /api/citas          cada 60 s    → Citas, calendario, próximas de hoy, ausentismo
  *   GET /api/doctores       al entrar    → calendario, usuarios
  *   GET /api/derivaciones   cada 45 s    → bandeja y cola por doctor (solo recepción/dirección)
@@ -31,15 +31,19 @@ import CitasView from "./vistas/CitasView";
 import DerivacionesView from "./vistas/DerivacionesView";
 import DoctoresView from "./vistas/DoctoresView";
 import EscaladasView from "./vistas/EscaladasView";
+import ModuloExpansionView from "./vistas/ModuloExpansionView";
 import ReportesView from "./vistas/ReportesView";
 import ResumenView from "./vistas/ResumenView";
 import UsuariosView from "./vistas/UsuariosView";
-import LimiteErrores from './ui/LimiteErrores';
+import LimiteErrores from "./ui/LimiteErrores";
 
 const TODOS = ["recepcion", "direccion", "doctor"];
 const OPERACION = ["recepcion", "direccion"];
 
-/** Orden y permisos del menú. Reportes queda visible para todos: muestra su pantalla premium. */
+/**
+ * Orden y permisos del menú. Reportes queda visible para todos: muestra su pantalla premium.
+ * grupo "expansion": catálogo de Astra Digital Solutions; candado salvo que el plan lo habilite.
+ */
 const SECCIONES = [
   { id: "resumen", etiqueta: "Resumen", roles: TODOS },
   { id: "derivaciones", etiqueta: "Derivaciones IA", roles: OPERACION },
@@ -48,6 +52,27 @@ const SECCIONES = [
   { id: "reportes", etiqueta: "Reportes", roles: TODOS, modulo: MODULO.REPORTES },
   { id: "escaladas", etiqueta: "Escaladas", roles: OPERACION },
   { id: "usuarios", etiqueta: "Usuarios", roles: ["direccion"] },
+  {
+    id: "analitica-financiera",
+    etiqueta: "Analítica Financiera",
+    roles: OPERACION,
+    modulo: MODULO.ANALITICA_FINANCIERA,
+    grupo: "expansion",
+  },
+  {
+    id: "lista-espera-vip",
+    etiqueta: "Lista de Espera VIP",
+    roles: OPERACION,
+    modulo: MODULO.LISTA_ESPERA_VIP,
+    grupo: "expansion",
+  },
+  {
+    id: "reactivacion-clientes",
+    etiqueta: "Reactivación de Clientes",
+    roles: OPERACION,
+    modulo: MODULO.REACTIVACION_DORMIDOS,
+    grupo: "expansion",
+  },
 ];
 
 const SONDEO_PLAN_MS = 5 * 60_000;
@@ -117,12 +142,16 @@ export default function AdminDashboard({ usuarioInicial, onSesionCerrada }) {
     () =>
       SECCIONES.filter((s) => s.roles.includes(rol)).map((s) => {
         const e = s.modulo ? estadoModulo(plan.datos, s.modulo, ahora) : null;
-                // Un 403 MODULO_PREMIUM de la bandeja también es un candado, aunque el plan aún no lo liste.
+        const esExpansion = s.grupo === "expansion";
+        // Un 403 MODULO_PREMIUM de la bandeja también es un candado, aunque el plan aún no lo liste.
         const bandejaBloqueada = s.id === "derivaciones" && esBloqueoPremium(derivaciones.error);
         return {
           id: s.id,
           etiqueta: s.etiqueta,
-          bloqueada: Boolean(e?.conocido && !e.habilitado) || bandejaBloqueada,
+          grupo: s.grupo ?? null,
+          // Expansión: candado por defecto; solo se quita cuando el servidor confirma el módulo habilitado.
+          bloqueada: esExpansion ? !e?.habilitado : Boolean(e?.conocido && !e.habilitado) || bandejaBloqueada,
+          diasPrueba: e?.enPrueba ? e.diasRestantes : null,
           cuenta: s.id === "derivaciones" && !bandejaBloqueada ? (derivaciones.datos?.length ?? null) : null,
         };
       }),
@@ -153,84 +182,93 @@ export default function AdminDashboard({ usuarioInicial, onSesionCerrada }) {
     if (onSesionCerrada) onSesionCerrada();
     else window.location.assign(RUTA_LOGIN);
   }, [onSesionCerrada]);
-  const contextoPlan = { plan, rol, ahora };
+
+  // Lo leen <ErrorVista> y <BloqueoPorRespuesta> para convertir un 403 MODULO_PREMIUM en bloqueo.
+  const contextoPlan = useMemo(() => ({ plan, rol, ahora }), [plan, rol, ahora]);
+
+  const seccionExpansion = SECCIONES.find((s) => s.id === vistaActiva && s.grupo === "expansion");
+
   let contenido;
-  switch (vistaActiva) {
-    case "derivaciones":
-            contenido = (
-        <DerivacionesView
-          derivaciones={derivaciones}
-          citas={citas}
-          plan={plan}
-          ahora={ahora}
-          rol={rol}
-          onReservar={reservar}
-        />
-      );
-      break;
-    case "citas":
-      contenido = <CitasView citas={citas} plan={plan} ahora={ahora} rol={rol} />;
-      break;
-    case "doctores":
-      contenido = (
-        <DoctoresView
-          doctores={doctores}
-          citas={citas}
-          derivaciones={derivaciones}
-          plan={plan}
-          ahora={ahora}
-          usuario={usuario}
-          onIrADerivaciones={() => navegar("derivaciones")}
-        />
-      );
-      break;
-    case "reportes":
-      contenido = <ReportesView plan={plan} citas={citas} ahora={ahora} rol={rol} />;
-      break;
-    case "escaladas":
-      contenido = <EscaladasView />;
-      break;
-    case "usuarios":
-      contenido = <UsuariosView plan={plan} doctores={doctores} usuarioActual={usuario} />;
-      break;
-    default:
-      contenido = <ResumenView rol={rol} citas={citas.datos} plan={plan} ahora={ahora} />;
+  if (seccionExpansion) {
+    contenido = <ModuloExpansionView modulo={seccionExpansion.modulo} plan={plan} ahora={ahora} rol={rol} />;
+  } else {
+    switch (vistaActiva) {
+      case "derivaciones":
+        contenido = (
+          <DerivacionesView
+            derivaciones={derivaciones}
+            citas={citas}
+            plan={plan}
+            ahora={ahora}
+            rol={rol}
+            onReservar={reservar}
+          />
+        );
+        break;
+      case "citas":
+        contenido = <CitasView citas={citas} plan={plan} ahora={ahora} rol={rol} />;
+        break;
+      case "doctores":
+        contenido = (
+          <DoctoresView
+            doctores={doctores}
+            citas={citas}
+            derivaciones={derivaciones}
+            plan={plan}
+            ahora={ahora}
+            usuario={usuario}
+            onIrADerivaciones={() => navegar("derivaciones")}
+          />
+        );
+        break;
+      case "reportes":
+        contenido = <ReportesView plan={plan} citas={citas} ahora={ahora} rol={rol} />;
+        break;
+      case "escaladas":
+        contenido = <EscaladasView />;
+        break;
+      case "usuarios":
+        contenido = <UsuariosView plan={plan} doctores={doctores} usuarioActual={usuario} />;
+        break;
+      default:
+        contenido = <ResumenView rol={rol} citas={citas.datos} plan={plan} ahora={ahora} />;
+    }
   }
 
   return (
-    <div className={`relative min-h-dvh bg-[#0B192C] text-[#E6E9EE] antialiased ${FUENTE}`}>
-      <MedicalNetworkBackground />
+    <ProveedorPlan value={contextoPlan}>
+      <div className={`relative min-h-dvh bg-[#0B192C] text-[#E6E9EE] antialiased ${FUENTE}`}>
+        <MedicalNetworkBackground />
 
-      <a
-        href="#principal"
-        className="sr-only z-50 rounded-md bg-[#E6E9EE] px-3 py-2 text-sm text-[#0B192C] focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
-      >
-        Ir al contenido
-      </a>
-
-      <div className="relative z-10 grid min-h-dvh grid-cols-1 content-start xl:h-dvh xl:grid-cols-[15rem_minmax(0,1fr)]">
-        <aside
-          aria-label="Menú del panel"
-          className="border-b border-[#1A2D48] bg-[#0B192C]/60 backdrop-blur-md xl:h-dvh xl:overflow-y-auto xl:border-b-0 xl:border-r"
+        <a
+          href="#principal"
+          className="sr-only z-50 rounded-md bg-[#E6E9EE] px-3 py-2 text-sm text-[#0B192C] focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
         >
-          <ControlSidebar
-            usuario={usuario}
-            red={red}
-            secciones={secciones}
-            activa={vistaActiva}
-            onNavegar={navegar}
-            onCerrarSesion={salir}
-            cerrandoSesion={cierre.enCurso}
-            errorCierre={cierre.error}
-          />
-        </aside>
+          Ir al contenido
+        </a>
 
-        <main id="principal" ref={principal} tabIndex={-1} className="min-w-0 outline-none xl:h-dvh xl:overflow-y-auto">
-          <LimiteErrores key={vistaActiva}>
-            {contenido}
-          </LimiteErrores>
-        </main>
+        <div className="relative z-10 grid min-h-dvh grid-cols-1 content-start xl:h-dvh xl:grid-cols-[15rem_minmax(0,1fr)]">
+          <aside
+            aria-label="Menú del panel"
+            className="border-b border-[#1A2D48] bg-[#0B192C]/60 backdrop-blur-md xl:h-dvh xl:overflow-y-auto xl:border-b-0 xl:border-r"
+          >
+            <ControlSidebar
+              usuario={usuario}
+              red={red}
+              secciones={secciones}
+              activa={vistaActiva}
+              onNavegar={navegar}
+              onCerrarSesion={salir}
+              cerrandoSesion={cierre.enCurso}
+              errorCierre={cierre.error}
+            />
+          </aside>
+
+          <main id="principal" ref={principal} tabIndex={-1} className="min-w-0 outline-none xl:h-dvh xl:overflow-y-auto">
+            <LimiteErrores key={vistaActiva}>{contenido}</LimiteErrores>
+          </main>
+        </div>
       </div>
-    </div>
+    </ProveedorPlan>
   );
 }
